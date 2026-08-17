@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ModX Cheat Tables | Vortex Prime</title>
+  <meta name="description" content="Publish a community Cheat Engine table to ModX using the game's executable for accurate matching.">
+  <style>
+    :root{color-scheme:dark;--bg:#080b11;--panel:#111720;--line:#293342;--line-strong:#3a485a;--muted:#95a2b4;--text:#f4f7fb;--accent:#4d8fd8;--success:#43c9a4;--danger:#ff6b78}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% -20%,#172333 0,transparent 42%),var(--bg);color:var(--text);font-family:Inter,"Segoe UI",Arial,sans-serif}
+    header{height:72px;display:flex;align-items:center;justify-content:space-between;padding:0 clamp(20px,5vw,72px);border-bottom:1px solid var(--line);background:rgba(8,11,17,.9)}
+    .brand{font-size:20px;font-weight:800}.brand span{color:var(--accent)}a{color:inherit;text-decoration:none}.header-actions{display:flex;align-items:center;gap:22px}.back,.browse-link{color:var(--muted);font-size:14px}.browse-link{color:#e7edf4;font-weight:700}.browse-link:hover,.back:hover{color:#fff}
+    main{width:min(1040px,calc(100% - 32px));margin:56px auto 80px}.eyebrow{color:#8bb9e8;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+    h1{max-width:760px;margin:12px 0 16px;font-size:clamp(34px,5vw,58px);line-height:1.02}.lead{max-width:760px;margin-bottom:36px;color:var(--muted);font-size:17px;line-height:1.65}
+    .layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:22px}.layout[hidden]{display:none}.card{padding:24px;border:1px solid var(--line);border-radius:18px;background:rgba(17,22,32,.94);box-shadow:0 24px 80px rgba(0,0,0,.25)}
+    .auth-gate{max-width:650px;padding:30px;border:1px solid var(--line);border-radius:18px;background:rgba(17,22,32,.96);box-shadow:0 24px 80px rgba(0,0,0,.25)}.auth-gate[hidden]{display:none}.auth-gate h2{margin:0 0 10px;font-size:24px}.auth-gate p{max-width:540px;margin:0;color:var(--muted);font-size:14px;line-height:1.65}.auth-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}.auth-link{display:inline-block;padding:12px 17px;border-radius:8px;background:#f4f6f8;color:#11151b;font-size:13px;font-weight:800;transition:background .18s,transform .18s}.auth-link:hover{background:#e4e8ec;transform:translateY(-1px)}.auth-link:active{background:#d2d7dd;transform:none}.auth-link.secondary{border:1px solid #3b4656;background:transparent;color:#f0f3f7}.auth-link.secondary:hover{background:#19202a}
+    label,.field-label{display:block;margin:0 0 8px;font-size:13px;font-weight:700}.field{position:relative;margin-bottom:22px}input{width:100%;padding:13px 14px;border:1px solid #303949;border-radius:10px;outline:none;background:#0b0f16;color:var(--text);font:inherit}input:focus{border-color:#57799d;box-shadow:0 0 0 3px rgba(77,143,216,.13)}
+    .field-note{margin:7px 0 0;color:var(--muted);font-size:11px;line-height:1.55}.file-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;clip-path:inset(50%)}
+    .exe-picker{display:flex;align-items:center;gap:12px}.exe-button{flex:0 0 auto;padding:11px 15px;border:0;border-radius:8px;background:#f4f6f8;color:#11151b;font-size:12px;font-weight:800;cursor:pointer;transition:background .18s,transform .18s}.exe-button:hover{background:#e4e8ec;transform:translateY(-1px)}.exe-button:active{background:#d2d7dd;transform:none}.secondary-button{flex:0 0 auto;padding:10px 13px;border:1px solid #485568;border-radius:8px;background:#171d27;color:#f3f5f8;font-size:12px;font-weight:700;cursor:pointer}.secondary-button:hover{background:#202936}.exe-empty{color:var(--muted);font-size:12px}.selected-exe{display:flex;align-items:center;gap:12px;margin-top:10px;padding:13px 14px;border:1px solid #3c4657;border-radius:11px;background:#101620}.selected-exe[hidden],.selected-file[hidden],.readme-step[hidden],.selected-readme[hidden]{display:none!important}.file-type{width:39px;height:39px;display:grid;place-items:center;flex:0 0 auto;border-radius:9px;background:#1a2634;color:#bed8f2;font-size:10px;font-weight:900}.file-details{min-width:0;display:grid;gap:3px;flex:1}.file-name{overflow:hidden;color:var(--text);font-size:13px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}.file-size,.file-fingerprint{color:var(--muted);font-size:10px}.remove-file{width:32px;height:32px;border:1px solid #3d4655;border-radius:8px;background:#151b25;color:#9ba7b8;cursor:pointer}.remove-file:hover{border-color:#7c4650;color:#ff8f99}
+    .choice-field{min-width:0;margin:0 0 22px;padding:0;border:0}.choice-field[hidden]{display:none}.choice-field legend{margin:0 0 9px;font-size:13px;font-weight:700}.choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.choice{display:flex;align-items:flex-start;gap:10px;margin:0;padding:13px;border:1px solid #303949;border-radius:10px;background:#0b0f16;color:#d8dee7;cursor:pointer;transition:border-color .18s,background .18s}.choice:hover{border-color:#455468;background:#101721}.choice:has(input:checked){border-color:#587797;background:#111c28}.choice input{width:15px;height:15px;flex:0 0 auto;margin:2px 0 0;padding:0;accent-color:#5d87b2}.choice-copy{display:grid;gap:3px}.choice-copy strong{font-size:13px}.choice-copy small{color:var(--muted);font-size:10px;font-weight:500;line-height:1.45}
+    .service-list{display:grid;gap:9px}.service-row{display:flex;align-items:center;gap:8px}.service-row input{min-width:0}.remove-service{width:38px;height:38px;flex:0 0 auto;border:0;border-radius:7px;background:transparent;color:#8692a3;font-size:18px;cursor:pointer}.remove-service:hover{background:#1a202a;color:#ff9099}.add-service{margin-top:9px;border:0;background:transparent;color:#a9c7e8;font-size:12px;font-weight:700;cursor:pointer}.add-service:hover{color:#d8e8f8}
+    .readme-step{margin:0 0 24px}.workflow-notice{padding:14px 15px;border:1px solid #526273;border-radius:11px;background:#151b25;color:#e8edf3}.workflow-notice strong{display:block;margin-bottom:5px;font-size:13px}.workflow-notice p{margin:0;color:#aab5c3;font-size:11px;line-height:1.55}.download-readme{display:inline-block;margin-top:10px;border:0;background:transparent;color:#c9def3;font-size:11px;font-weight:800;cursor:pointer}.readme-upload{display:flex;align-items:center;gap:12px;margin-top:11px}.readme-empty{color:var(--muted);font-size:11px}.selected-readme{display:flex;align-items:center;gap:12px;margin-top:10px;padding:13px 14px;border:1px solid #3c695d;border-radius:11px;background:#101b19}.readme-state{color:var(--success);font-size:10px}.upload-field{margin-top:24px}.upload-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:10px}.upload-heading label{margin:0}.upload-heading span{color:var(--muted);font-size:11px}.drop-zone{min-height:190px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;border:1px dashed #46566a;border-radius:14px;background:linear-gradient(145deg,rgba(77,143,216,.05),rgba(77,143,216,.012)),#0b0f16;text-align:center;cursor:pointer;transition:border-color .2s,background .2s,transform .2s,box-shadow .2s}.drop-zone:hover,.drop-zone:focus-visible,.drop-zone.is-dragging{border-color:#568dca;background:linear-gradient(145deg,rgba(77,143,216,.1),rgba(77,143,216,.025)),#0b0f16;box-shadow:0 0 0 4px rgba(77,143,216,.09);transform:translateY(-1px)}.drop-zone.is-locked{opacity:.38;cursor:not-allowed;pointer-events:none}.upload-icon{width:52px;height:52px;display:grid;place-items:center;margin-bottom:14px;border:1px solid #40536a;border-radius:14px;background:#172230;color:#a9c7e8}.upload-icon svg{width:25px;height:25px}.drop-zone strong{font-size:15px}.drop-zone p{margin:7px 0 0;color:var(--muted);font-size:12px}.browse-text{color:#9dc5ed;font-weight:800}.upload-formats{margin-top:14px;color:#697589;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.selected-file{display:flex;align-items:center;gap:12px;margin-top:12px;padding:13px 14px;border:1px solid #3c4657;border-radius:11px;background:#101620;text-align:left}
+    .policy-confirm{display:flex;align-items:flex-start;gap:10px;margin:16px 0 18px;padding:13px 14px;border:1px solid #303949;border-radius:10px;background:#0b0f16;color:#c8d0dc;font-size:12px;font-weight:600;line-height:1.45;cursor:pointer}.policy-confirm input{width:16px;height:16px;flex:0 0 auto;margin:1px 0 0;padding:0;accent-color:#5d87b2}.submit{width:100%;height:50px;margin-top:4px;border:0;border-radius:11px;background:#f4f6f8;color:#11151b;font-weight:800;cursor:pointer;transition:background .18s,transform .18s}.submit:not(:disabled):hover{background:#e4e8ec;transform:translateY(-1px)}.submit:not(:disabled):active{background:#d2d7dd;transform:none}.submit:disabled{opacity:.35;cursor:not-allowed}.status{min-height:20px;margin-top:14px;color:var(--muted);font-size:13px;line-height:1.5}.status.ok{color:var(--success)}.status.error{color:var(--danger)}
+    aside h2{margin-top:0;font-size:17px}aside p,aside li{color:var(--muted);font-size:13px;line-height:1.6}aside ul{padding-left:18px}.repo{display:block;margin-top:18px;padding:12px;border:1px solid var(--line);border-radius:10px;color:#b8d3ee;font-size:13px}
+    @media(max-width:800px){.layout{grid-template-columns:1fr}header{padding:0 20px}main{margin-top:36px}}@media(max-width:520px){.card{padding:18px}.choice-grid{grid-template-columns:1fr}.exe-picker{align-items:stretch;flex-direction:column}.exe-button{width:100%}}
+  </style>
+</head>
+<body>
+  <header><a class="brand" href="/">Vortex Prime <span>× ModX</span></a><nav class="header-actions" aria-label="ModX navigation"><a class="browse-link" href="community.html">Browse community tables</a><a class="back" href="/">Back to Vortex Prime</a></nav></header>
+  <main>
+    <div class="eyebrow">Community tables</div>
+    <h1>Publish to ModX Cheat Tables</h1>
+    <p class="lead">Choose the game's executable, specify which services the table supports, and decide how future updates should be handled.</p>
+    <section class="auth-gate" id="authGate">
+      <h2>Sign in required</h2>
+      <p id="authGateMessage">You must be signed in to Vortex Prime before you can upload a ModX cheat table. Return to the home page, sign in, then come back here to continue.</p>
+      <div class="auth-actions"><a class="auth-link" href="/">Go to the home page to sign in</a><a class="auth-link secondary" href="community.html">Browse community tables</a></div>
+    </section>
+    <div class="layout" id="publisherLayout" hidden>
+      <form class="card" id="form" novalidate>
+        <div class="field">
+          <span class="field-label">Game executable</span>
+          <div class="exe-picker">
+            <input class="file-input" id="gameExecutable" type="file" accept=".exe,application/x-msdownload,application/vnd.microsoft.portable-executable">
+            <button class="exe-button" id="chooseExecutable" type="button">Choose game .exe</button>
+            <span class="exe-empty" id="executableEmpty">Select the executable that starts the game.</span>
+          </div>
+          <div class="selected-exe" id="selectedExecutable" hidden>
+            <span class="file-type">EXE</span>
+            <span class="file-details"><span class="file-name" id="executableName"></span><span class="file-size" id="executableSize"></span><span class="file-fingerprint" id="executableFingerprint"></span></span>
+            <button class="remove-file" id="removeExecutable" type="button" aria-label="Remove selected game executable">×</button>
+          </div>
+          <p class="field-note">The executable is checked locally to create a matching fingerprint. The file itself and its local path are never uploaded or stored.</p>
+        </div>
+
+        <fieldset class="choice-field">
+          <legend>Where is this table supported?</legend>
+          <div class="choice-grid">
+            <label class="choice"><input type="radio" name="serviceScope" value="single" checked><span class="choice-copy"><strong>One service</strong><small>For a release from one game service.</small></span></label>
+            <label class="choice"><input type="radio" name="serviceScope" value="multiple"><span class="choice-copy"><strong>Multiple services</strong><small>Works with releases from more than one game service.</small></span></label>
+          </div>
+        </fieldset>
+
+        <div class="field">
+          <label id="servicesLabel">Service name</label>
+          <div class="service-list" id="serviceList" aria-labelledby="servicesLabel"></div>
+          <button class="add-service" id="addService" type="button" hidden>+ Add another service</button>
+          <p class="field-note">Enter the service names exactly as users will recognise them, such as Steam or Ubisoft Connect.</p>
+        </div>
+
+        <fieldset class="choice-field" id="futureServiceField">
+          <legend>Do you plan to support more services later?</legend>
+          <div class="choice-grid">
+            <label class="choice"><input type="radio" name="futureServiceSupport" value="no" checked><span class="choice-copy"><strong>No</strong><small>This table is intended for the service listed above.</small></span></label>
+            <label class="choice"><input type="radio" name="futureServiceSupport" value="yes"><span class="choice-copy"><strong>Yes, more services are planned</strong><small>You expect to add compatible releases later.</small></span></label>
+          </div>
+        </fieldset>
+
+        <fieldset class="choice-field">
+          <legend>How should future updates be handled?</legend>
+          <div class="choice-grid">
+            <label class="choice"><input type="radio" name="maintenancePolicy" value="uploader" checked><span class="choice-copy"><strong>I'll maintain this table</strong><small>Choose this if you expect to publish future updates yourself.</small></span></label>
+            <label class="choice"><input type="radio" name="maintenancePolicy" value="community"><span class="choice-copy"><strong>Community maintenance allowed</strong><small>ModX moderators or community members may maintain it when needed.</small></span></label>
+          </div>
+        </fieldset>
+
+        <section class="readme-step" id="readmeStep" hidden>
+          <div class="workflow-notice" role="alert">
+            <strong>Complete the community README before continuing</strong>
+            <p>Your README.md template has been downloaded. Fill in every section, save it, then upload the completed file here. The Cheat Engine table upload remains locked until the README is accepted.</p>
+            <button class="download-readme" id="downloadReadme" type="button">Download README.md again</button>
+          </div>
+          <div class="readme-upload">
+            <input class="file-input" id="readmeFile" name="readme" type="file" accept=".md,text/markdown,text/plain">
+            <button class="secondary-button" id="chooseReadme" type="button">Upload completed README.md</button>
+            <span class="readme-empty" id="readmeEmpty">Every template section must contain information.</span>
+          </div>
+          <div class="selected-readme" id="selectedReadme" hidden>
+            <span class="file-type">MD</span>
+            <span class="file-details"><span class="file-name" id="readmeName"></span><span class="readme-state">Completed README accepted</span></span>
+            <button class="remove-file" id="removeReadme" type="button" aria-label="Remove completed README">×</button>
+          </div>
+        </section>
+
+        <div class="field upload-field">
+          <div class="upload-heading"><label for="file">Cheat Engine table</label><span>Secure direct upload</span></div>
+          <input class="file-input" id="file" name="file" type="file" accept=".ct" required>
+          <label class="drop-zone" id="dropZone" for="file" tabindex="0">
+            <span class="upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg></span>
+            <strong>Drag and drop your cheat table</strong>
+            <p>or <span class="browse-text">browse files</span> from your device</p>
+            <span class="upload-formats">Cheat Engine .CT files only</span>
+          </label>
+          <div class="selected-file" id="selectedFile" hidden>
+            <span class="file-type">CT</span>
+            <span class="file-details"><span class="file-name" id="fileName"></span><span class="file-size" id="fileSize"></span></span>
+            <button class="remove-file" id="removeFile" type="button" aria-label="Remove selected cheat table">×</button>
+          </div>
+        </div>
+
+        <label class="policy-confirm"><input id="offlineOnlyConfirmed" type="checkbox" required><span>I confirm this table is intended for offline or single-player use only.</span></label>
+        <button class="submit" id="submitBtn" type="submit" disabled>Publish table</button>
+        <div class="status" id="status" role="status" aria-live="polite"></div>
+      </form>
+
+      <aside class="card"><h2>How publishing works</h2><ul><li>The game executable is fingerprinted locally and is never uploaded.</li><li>The `.CT` file is not saved in website storage.</li><li>Cloudflare performs automatic technical and security checks.</li><li>Valid tables are published immediately from the separate ModX repository.</li><li>Community reports can trigger an immediate takedown.</li><li>All tables are for offline or single-player use only.</li></ul><a class="repo" href="https://github.com/rileyadams05/ModX" target="_blank" rel="noopener">View the ModX repository →</a></aside>
+    </div>
+  </main>
+
+  <script>
+    const authGate=document.getElementById('authGate'),authGateMessage=document.getElementById('authGateMessage'),publisherLayout=document.getElementById('publisherLayout'),gameExecutable=document.getElementById('gameExecutable'),chooseExecutable=document.getElementById('chooseExecutable'),selectedExecutable=document.getElementById('selectedExecutable'),executableEmpty=document.getElementById('executableEmpty'),executableName=document.getElementById('executableName'),executableSize=document.getElementById('executableSize'),executableFingerprint=document.getElementById('executableFingerprint'),removeExecutable=document.getElementById('removeExecutable'),serviceList=document.getElementById('serviceList'),servicesLabel=document.getElementById('servicesLabel'),addService=document.getElementById('addService'),futureServiceField=document.getElementById('futureServiceField'),readmeStep=document.getElementById('readmeStep'),readmeFile=document.getElementById('readmeFile'),chooseReadme=document.getElementById('chooseReadme'),downloadReadme=document.getElementById('downloadReadme'),selectedReadme=document.getElementById('selectedReadme'),readmeName=document.getElementById('readmeName'),readmeEmpty=document.getElementById('readmeEmpty'),removeReadme=document.getElementById('removeReadme'),fileInput=document.getElementById('file'),dropZone=document.getElementById('dropZone'),selectedFile=document.getElementById('selectedFile'),fileName=document.getElementById('fileName'),fileSize=document.getElementById('fileSize'),removeFile=document.getElementById('removeFile'),offlineOnlyConfirmed=document.getElementById('offlineOnlyConfirmed'),statusEl=document.getElementById('status'),submitBtn=document.getElementById('submitBtn');
+    const README_FIELDS=['Game Name','Author','Version','Game.exe','Platform service/Cross-platform','Credits'];
+    let authConfig=null,authUser=null,publishing=false,serviceScope='single',maintenancePolicy='uploader',readmeValidated=false,executableMetadata=null,executableSequence=0;
+
+    function status(message,type=''){statusEl.textContent=message;statusEl.className='status '+type}
+    function formatBytes(bytes){if(bytes<1024)return bytes+' bytes';if(bytes<1024*1024)return(bytes/1024).toFixed(1)+' KB';if(bytes<1024*1024*1024)return(bytes/(1024*1024)).toFixed(1)+' MB';return(bytes/(1024*1024*1024)).toFixed(2)+' GB'}
+    function cleanService(value){return String(value||'').trim().replace(/\s+/g,' ').slice(0,80)}
+    function serviceNames(){const seen=new Set(),names=[];for(const input of serviceList.querySelectorAll('input')){const name=cleanService(input.value);const key=name.toLowerCase();if(name&&!seen.has(key)){seen.add(key);names.push(name)}}return names}
+    function validServices(){const count=serviceNames().length;return serviceScope==='single'?count===1:count>=2}
+    function validTable(){const file=fileInput.files[0];return !!file&&file.size>0&&file.name.toLowerCase().endsWith('.ct')}
+    function updatePublish(){submitBtn.disabled=publishing||!authUser||!executableMetadata||!validServices()||(maintenancePolicy==='community'&&!readmeValidated)||!validTable()||!offlineOnlyConfirmed.checked}
+    function humanizeExecutable(name){return name.replace(/\.exe$/i,'').replace(/[_-]+/g,' ').replace(/([a-z0-9])([A-Z])/g,'$1 $2').replace(/\s+/g,' ').trim()}
+    function hex(bytes){return [...new Uint8Array(bytes)].map(value=>value.toString(16).padStart(2,'0')).join('')}
+
+    function renderServices(values=['']){
+      const required=serviceScope==='single'?1:Math.max(2,values.length);const next=values.slice(0,12);while(next.length<required)next.push('');serviceList.replaceChildren();servicesLabel.textContent=serviceScope==='single'?'Service name':'Supported services';addService.hidden=serviceScope!=='multiple'||next.length>=12;
+      next.forEach((value,index)=>{const row=document.createElement('div');row.className='service-row';const input=document.createElement('input');input.type='text';input.maxLength=80;input.autocomplete='off';input.placeholder=serviceScope==='single'?'e.g. Steam':`Service ${index+1}`;input.value=value;input.setAttribute('aria-label',serviceScope==='single'?'Service name':`Supported service ${index+1}`);input.addEventListener('input',updatePublish);row.append(input);if(serviceScope==='multiple'){const remove=document.createElement('button');remove.type='button';remove.className='remove-service';remove.textContent='×';remove.setAttribute('aria-label',`Remove service ${index+1}`);remove.disabled=next.length<=2;remove.addEventListener('click',()=>{const current=[...serviceList.querySelectorAll('input')].map(item=>item.value);current.splice(index,1);renderServices(current);updatePublish()});row.append(remove)}serviceList.append(row)});updatePublish()
+    }
+
+    async function selectGameExecutable(){
+      const file=gameExecutable.files[0];const sequence=++executableSequence;executableMetadata=null;selectedExecutable.hidden=true;executableEmpty.hidden=false;
+      if(!file){status('');updatePublish();return}
+      if(!file.name.toLowerCase().endsWith('.exe')||!file.size){gameExecutable.value='';status('Choose a valid Windows game .exe file.','error');updatePublish();return}
+      publishing=true;updatePublish();status('Checking the game executable locally…');
+      try{const signature=new Uint8Array(await file.slice(0,2).arrayBuffer());if(signature[0]!==0x4d||signature[1]!==0x5a)throw new Error('The selected file is not a valid Windows executable.');const digest=hex(await crypto.subtle.digest('SHA-256',await file.arrayBuffer()));if(sequence!==executableSequence)return;executableMetadata={name:file.name,title:humanizeExecutable(file.name),size:file.size,sha256:digest};executableName.textContent=executableMetadata.title+' — '+file.name;executableSize.textContent=formatBytes(file.size);executableFingerprint.textContent='Fingerprint '+digest.slice(0,16)+'…';selectedExecutable.hidden=false;executableEmpty.hidden=true;status('Game executable identified.','ok')}catch(error){if(sequence!==executableSequence)return;gameExecutable.value='';executableMetadata=null;status(error.message||'The game executable could not be read.','error')}finally{if(sequence===executableSequence){publishing=false;updatePublish()}}
+    }
+
+    function clearExecutable(){executableSequence+=1;gameExecutable.value='';executableMetadata=null;selectedExecutable.hidden=true;executableEmpty.hidden=false;status('');updatePublish()}
+    function readmeMissingFields(text){
+      const lines=String(text||'').replace(/^\uFEFF/,'').replace(/\r/g,'').split('\n');
+      const headings=README_FIELDS.map(label=>({label,index:lines.findIndex(line=>{const value=line.trim().toLowerCase();const target=label.toLowerCase();return value===target||value.startsWith(target+':')})}));
+      return headings.filter((heading,position)=>{
+        if(heading.index<0)return true;
+        const sameLine=lines[heading.index].trim().slice(heading.label.length).replace(/^:\s*/,'').trim();
+        if(sameLine)return false;
+        const later=headings.slice(position+1).map(item=>item.index).filter(index=>index>heading.index);
+        const end=later.length?Math.min(...later):lines.length;
+        return !lines.slice(heading.index+1,end).map(line=>line.trim()).filter(line=>line&&!line.startsWith('>')).join(' ');
+      }).map(heading=>heading.label);
+    }
+    function downloadReadmeTemplate(){const link=document.createElement('a');link.href='README.md';link.download='README.md';document.body.append(link);link.click();link.remove()}
+    function clearReadme(){readmeFile.value='';readmeValidated=false;selectedReadme.hidden=true;readmeName.textContent='';readmeEmpty.hidden=false;setTableLock(maintenancePolicy==='community');updatePublish()}
+    function setTableLock(locked){fileInput.disabled=locked;dropZone.classList.toggle('is-locked',locked);dropZone.setAttribute('aria-disabled',String(locked));if(locked){fileInput.value='';showSelectedTable()}}
+    async function validateReadme(){
+      const file=readmeFile.files[0];readmeValidated=false;selectedReadme.hidden=true;readmeEmpty.hidden=false;
+      if(!file){setTableLock(maintenancePolicy==='community');updatePublish();return false}
+      if(file.name.toLowerCase()!=='readme.md'){clearReadme();status('Upload the completed file using the name README.md.','error');return false}
+      if(!file.size||file.size>512*1024){clearReadme();status('README.md must contain your completed details and be smaller than 512 KB.','error');return false}
+      const missing=readmeMissingFields(await file.text());
+      if(missing.length){clearReadme();status('Complete these README sections before uploading it again: '+missing.join(', ')+'.','error');return false}
+      readmeValidated=true;selectedReadme.hidden=false;readmeName.textContent=file.name;readmeEmpty.hidden=true;setTableLock(false);status('README.md accepted. You can now upload the Cheat Engine table.','ok');updatePublish();return true
+    }
+    function selectMaintenancePolicy(value,{download=false}={}){
+      maintenancePolicy=value;readmeStep.hidden=value!=='community';clearReadme();
+      if(value==='community'){status('Complete and re-upload README.md before adding the Cheat Engine table.','error');if(download)downloadReadmeTemplate()}else status('');
+      updatePublish()
+    }
+    function showSelectedTable(){const file=fileInput.files[0];selectedFile.hidden=!file;if(!file){fileName.textContent='';fileSize.textContent='';return}fileName.textContent=file.name;fileSize.textContent=formatBytes(file.size)}
+    function validateSelectedTable(){const file=fileInput.files[0];if(!file){status('');showSelectedTable();updatePublish();return false}if(!file.name.toLowerCase().endsWith('.ct')){status('Choose a valid Cheat Engine .CT file.','error');fileInput.value='';showSelectedTable();updatePublish();return false}if(!file.size){status('The selected file is empty.','error');fileInput.value='';showSelectedTable();updatePublish();return false}status('');showSelectedTable();updatePublish();return true}
+    function acceptDroppedFile(file){if(!file)return;const transfer=new DataTransfer();transfer.items.add(file);fileInput.files=transfer.files;validateSelectedTable()}
+    async function json(url,options={}){const response=await fetch(url,{credentials:'include',...options});const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error(body.message||body.error||'Request failed');return body}
+    function showSignedOut(message='You must be signed in to Vortex Prime before you can upload a ModX cheat table. Return to the home page, sign in, then come back here to continue.'){
+      authUser=null;authGateMessage.textContent=message;authGate.hidden=false;publisherLayout.hidden=true;updatePublish()
+    }
+    function showPublisher(user){authUser=user;authGate.hidden=true;publisherLayout.hidden=false;updatePublish()}
+    async function loadAuth(){authConfig=await json('/api/auth/config');if(authConfig.user)showPublisher(authConfig.user);else showSignedOut();return authConfig}
+
+    chooseExecutable.addEventListener('click',()=>gameExecutable.click());gameExecutable.addEventListener('change',selectGameExecutable);removeExecutable.addEventListener('click',clearExecutable);
+    document.querySelectorAll('input[name="serviceScope"]').forEach(input=>input.addEventListener('change',()=>{const current=serviceNames();serviceScope=input.value;futureServiceField.hidden=serviceScope!=='single';renderServices(serviceScope==='single'?[current[0]||'']:current.length>=2?current:[current[0]||'','']);status('');updatePublish()}));
+    document.querySelectorAll('input[name="maintenancePolicy"]').forEach(input=>input.addEventListener('change',()=>selectMaintenancePolicy(input.value,{download:input.value==='community'})));
+    addService.addEventListener('click',()=>{const current=[...serviceList.querySelectorAll('input')].map(input=>input.value);if(current.length<12){current.push('');renderServices(current);const inputs=serviceList.querySelectorAll('input');inputs[inputs.length-1]?.focus()}});
+    chooseReadme.addEventListener('click',()=>readmeFile.click());downloadReadme.addEventListener('click',downloadReadmeTemplate);readmeFile.addEventListener('change',validateReadme);removeReadme.addEventListener('click',()=>{clearReadme();status('Upload the completed README.md before continuing.','error')});
+    fileInput.addEventListener('change',validateSelectedTable);dropZone.addEventListener('keydown',event=>{if(fileInput.disabled)return;if(event.key==='Enter'||event.key===' '){event.preventDefault();fileInput.click()}});for(const eventName of ['dragenter','dragover'])dropZone.addEventListener(eventName,event=>{event.preventDefault();event.stopPropagation();if(!fileInput.disabled)dropZone.classList.add('is-dragging')});for(const eventName of ['dragleave','drop'])dropZone.addEventListener(eventName,event=>{event.preventDefault();event.stopPropagation();dropZone.classList.remove('is-dragging')});dropZone.addEventListener('drop',event=>{if(!fileInput.disabled)acceptDroppedFile(event.dataTransfer?.files?.[0])});removeFile.addEventListener('click',()=>{fileInput.value='';showSelectedTable();status('');updatePublish();fileInput.focus()});offlineOnlyConfirmed.addEventListener('change',updatePublish);
+
+    document.getElementById('form').addEventListener('submit',async event=>{event.preventDefault();const services=serviceNames(),futureServiceSupport=serviceScope==='single'&&document.querySelector('input[name="futureServiceSupport"]:checked').value==='yes';if(!authUser){showSignedOut();return}if(!executableMetadata)return status('Choose the game .exe file.','error');if(serviceScope==='single'&&services.length!==1)return status('Enter the service this table supports.','error');if(serviceScope==='multiple'&&services.length<2)return status('Enter at least two supported services.','error');if(maintenancePolicy==='community'&&!readmeValidated)return status('Complete and re-upload README.md before adding the Cheat Engine table.','error');if(!validTable())return status('Choose a valid Cheat Engine .CT file.','error');if(!offlineOnlyConfirmed.checked)return status('Confirm that this table is for offline or single-player use only.','error');publishing=true;updatePublish();status('Checking your Vortex Prime session…');try{const currentAuth=await json('/api/auth/config');if(!currentAuth.user){showSignedOut('Your Vortex Prime session has ended. Return to the home page, sign in again, then come back here to continue.');return}authUser=currentAuth.user;const form=new FormData();form.set('gameExecutableName',executableMetadata.name);form.set('gameExecutableSize',String(executableMetadata.size));form.set('gameExecutableSha256',executableMetadata.sha256);form.set('serviceScope',serviceScope);form.set('services',JSON.stringify(services));form.set('futureServiceSupport',String(futureServiceSupport));form.set('maintenancePolicy',maintenancePolicy);form.set('offlineOnlyConfirmed','true');if(maintenancePolicy==='community')form.set('readme',readmeFile.files[0],'README.md');form.set('file',fileInput.files[0]);status('Running checks and publishing to the ModX GitHub repository…');await json('/api/modx/submit',{method:'POST',body:form});clearExecutable();serviceScope='single';document.querySelector('input[name="serviceScope"][value="single"]').checked=true;document.querySelector('input[name="futureServiceSupport"][value="no"]').checked=true;document.querySelector('input[name="maintenancePolicy"][value="uploader"]').checked=true;futureServiceField.hidden=false;maintenancePolicy='uploader';readmeStep.hidden=true;clearReadme();renderServices(['']);fileInput.value='';offlineOnlyConfirmed.checked=false;showSelectedTable();status('Table published successfully. It is now available to the ModX community.','ok')}catch(error){if(/sign in|authenticated|session/i.test(error.message||'')){showSignedOut('Your Vortex Prime session has ended. Return to the home page, sign in again, then come back here to continue.')}else status(error.message||'Publishing failed. Try again.','error')}finally{publishing=false;updatePublish()}});
+
+    renderServices(['']);loadAuth().catch(()=>showSignedOut('Vortex Prime could not verify your sign-in. Return to the home page, sign in, then come back here to continue.'));updatePublish();
+  </script>
+</body>
+</html>

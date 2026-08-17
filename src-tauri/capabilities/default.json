@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the ModX main and process-list windows",
+  "windows": ["main", "process-list"],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open"
+  ]
+}

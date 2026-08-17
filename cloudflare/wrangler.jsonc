@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "modx-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": true,
+  "routes": [
+    {
+      "pattern": "modx.vortex-prime-emu.com",
+      "custom_domain": true
+    }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "GITHUB_OWNER": "rileyadams05",
+    "GITHUB_REPO": "ModX",
+    "GITHUB_BRANCH": "main"
+  },
+  "d1_databases": [
+    {
+      "binding": "MODX_DB",
+      "database_name": "modx-catalog",
+      "database_id": "e4b05c96-930a-4012-8980-cfcd697d0c19",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Browse ModX Community Tables | Vortex Prime</title>
+  <meta name="description" content="Find and download ModX community Cheat Engine tables by game executable, with an optional author filter.">
+  <style>
+    :root{color-scheme:dark;--bg:#080b11;--panel:#111720;--line:#293342;--muted:#95a2b4;--text:#f4f7fb;--success:#43c9a4;--danger:#ff6b78}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% -20%,#172333 0,transparent 42%),var(--bg);color:var(--text);font-family:Inter,"Segoe UI",Arial,sans-serif}a{color:inherit;text-decoration:none}
+    header{height:72px;display:flex;align-items:center;justify-content:space-between;padding:0 clamp(20px,5vw,72px);border-bottom:1px solid var(--line);background:rgba(8,11,17,.92)}.brand{font-size:20px;font-weight:800}.brand span{color:#83b4e5}.header-actions{display:flex;align-items:center;gap:22px}.header-link{color:var(--muted);font-size:14px}.header-link.primary{color:#edf2f7;font-weight:700}.header-link:hover{color:#fff}
+    main{width:min(1040px,calc(100% - 32px));margin:56px auto 80px}.eyebrow{color:#8bb9e8;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}h1{margin:12px 0 16px;font-size:clamp(34px,5vw,58px);line-height:1.02}.lead{max-width:760px;margin:0 0 34px;color:var(--muted);font-size:17px;line-height:1.65}
+    .search-panel{padding:24px;border:1px solid var(--line);border-radius:18px;background:rgba(17,23,32,.96);box-shadow:0 24px 80px rgba(0,0,0,.25)}.search-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,.55fr) auto;gap:12px;align-items:end}.field label{display:block;margin:0 0 8px;font-size:13px;font-weight:750}.field small{display:block;margin-top:7px;color:var(--muted);font-size:11px;line-height:1.45}input{width:100%;height:46px;padding:0 14px;border:1px solid #303949;border-radius:9px;outline:none;background:#0b0f16;color:var(--text);font:inherit}input:focus{border-color:#65788f;box-shadow:0 0 0 3px rgba(118,145,175,.12)}button,.download{height:46px;padding:0 18px;border:0;border-radius:9px;background:#f4f6f8;color:#11151b;font-size:13px;font-weight:800;cursor:pointer;transition:background .18s,transform .18s}button:hover,.download:hover{background:#e4e8ec;transform:translateY(-1px)}button:active,.download:active{background:#d2d7dd;transform:none}button:disabled{opacity:.45;cursor:not-allowed;transform:none}.storage-note{margin:18px 0 0;color:var(--muted);font-size:12px}.storage-note strong{color:#e8edf3}
+    .results-head{display:flex;align-items:end;justify-content:space-between;gap:18px;margin:34px 0 14px}.results-head h2{margin:0;font-size:20px}.result-count{color:var(--muted);font-size:12px}.state{padding:42px 24px;border:1px solid var(--line);border-radius:16px;background:rgba(17,23,32,.72);text-align:center}.state h2{margin:0 0 8px;font-size:20px}.state p{max-width:560px;margin:0 auto;color:var(--muted);font-size:13px;line-height:1.6}.state.error h2{color:var(--danger)}.results{display:grid;gap:12px}.table-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:22px;align-items:center;padding:20px 22px;border:1px solid var(--line);border-radius:14px;background:rgba(17,23,32,.9)}.table-title{margin:0 0 5px;font-size:17px}.table-meta{display:flex;flex-wrap:wrap;gap:7px 16px;color:var(--muted);font-size:12px;line-height:1.5}.table-meta strong{color:#e9edf3;font-weight:700}.policy{margin:12px 0 0;color:var(--success);font-size:11px;font-weight:700}.download{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}.fine-print{margin-top:16px;color:#718095;font-size:11px;line-height:1.55}
+    [hidden]{display:none!important}@media(max-width:760px){header{padding:0 20px}.header-actions{gap:12px}.header-link:not(.primary){display:none}main{margin-top:36px}.search-grid{grid-template-columns:1fr}.table-card{grid-template-columns:1fr}.download{width:100%}}@media(max-width:460px){.header-link.primary{font-size:12px}.search-panel{padding:18px}}
+  </style>
+</head>
+<body>
+  <header><a class="brand" href="/">Vortex Prime <span>× ModX</span></a><nav class="header-actions" aria-label="ModX navigation"><a class="header-link primary" href="index.html">Publish a table</a><a class="header-link" href="/">Back to Vortex Prime</a></nav></header>
+  <main>
+    <div class="eyebrow">Community catalogue</div>
+    <h1>Browse community tables</h1>
+    <p class="lead">Enter the game executable to find compatible Cheat Engine tables. If you want a table from a specific creator, add their author name as well.</p>
+
+    <form class="search-panel" id="searchForm" novalidate>
+      <div class="search-grid">
+        <div class="field"><label for="executable">Game executable</label><input id="executable" name="executable" type="text" maxlength="260" autocomplete="off" spellcheck="false" placeholder="e.g. WatchDogs.exe" required><small>Use the executable filename, including <code>.exe</code>.</small></div>
+        <div class="field"><label for="author">Author name <span style="color:var(--muted);font-weight:500">(optional)</span></label><input id="author" name="author" type="text" maxlength="100" autocomplete="off" placeholder="Filter by author"><small>Only use this when looking for a specific author.</small></div>
+        <button id="searchButton" type="submit">Search tables</button>
+      </div>
+      <p class="storage-note"><strong>Files are stored in the ModX GitHub repository.</strong> Vortex Prime only displays the catalogue and provides the download link.</p>
+    </form>
+
+    <section aria-live="polite">
+      <div class="results-head" id="resultsHead" hidden><h2>Available tables</h2><span class="result-count" id="resultCount"></span></div>
+      <div class="state" id="initialState"><h2>Find a game’s tables</h2><p>Search using the exact game executable name. Add an author only when you want to narrow the results to a particular creator.</p></div>
+      <div class="state" id="loadingState" hidden><h2>Searching the community catalogue…</h2><p>Checking the published ModX tables stored through GitHub.</p></div>
+      <div class="state" id="emptyState" hidden><h2>No community tables found</h2><p id="emptyMessage">There are no published tables for that executable yet.</p></div>
+      <div class="state error" id="errorState" hidden><h2>Catalogue unavailable</h2><p id="errorMessage">The community catalogue could not be loaded. Please try again.</p></div>
+      <div class="results" id="results" hidden></div>
+      <p class="fine-print" id="finePrint" hidden>Community tables are for offline or single-player use only. Downloaded `.CT` files can contain executable scripts; review the table before using it.</p>
+    </section>
+  </main>
+  <script>
+    const searchForm=document.getElementById('searchForm'),executableInput=document.getElementById('executable'),authorInput=document.getElementById('author'),searchButton=document.getElementById('searchButton'),resultsHead=document.getElementById('resultsHead'),resultCount=document.getElementById('resultCount'),initialState=document.getElementById('initialState'),loadingState=document.getElementById('loadingState'),emptyState=document.getElementById('emptyState'),emptyMessage=document.getElementById('emptyMessage'),errorState=document.getElementById('errorState'),errorMessage=document.getElementById('errorMessage'),results=document.getElementById('results'),finePrint=document.getElementById('finePrint');
+    const states=[initialState,loadingState,emptyState,errorState,results];
+    function showState(target){states.forEach(state=>state.hidden=state!==target);const hasResults=target===results;resultsHead.hidden=!hasResults;finePrint.hidden=!hasResults}
+    function formatBytes(bytes){const value=Number(bytes);if(!Number.isFinite(value)||value<=0)return 'Size unavailable';if(value<1024)return value+' bytes';if(value<1024*1024)return(value/1024).toFixed(1)+' KB';return(value/(1024*1024)).toFixed(1)+' MB'}
+    function formatDate(value){const date=new Date(value);return Number.isNaN(date.getTime())?'Date unavailable':new Intl.DateTimeFormat(undefined,{dateStyle:'medium'}).format(date)}
+    function text(value,fallback='Unknown'){const cleaned=String(value||'').trim();return cleaned||fallback}
+    function executableFor(table){return text(table.executables?.windows||Object.values(table.executables||{})[0],'Unknown executable')}
+    function renderTables(tables){results.replaceChildren();for(const table of tables){const card=document.createElement('article');card.className='table-card';const details=document.createElement('div');const title=document.createElement('h3');title.className='table-title';title.textContent=text(table.gameTitle,'Community table');const meta=document.createElement('div');meta.className='table-meta';const values=[['Executable',executableFor(table)],['Author',text(table.contributorName,'Community')],['Version',text(table.version,'1.0')],['Services',Array.isArray(table.services)&&table.services.length?table.services.join(', '):'Windows'],['File',text(table.filename)],['Size',formatBytes(table.fileSize)],['Published',formatDate(table.createdAt)]];for(const [label,value] of values){const item=document.createElement('span');const strong=document.createElement('strong');strong.textContent=label+': ';item.append(strong,document.createTextNode(value));meta.append(item)}const policy=document.createElement('p');policy.className='policy';policy.textContent='Offline/single-player use only';details.append(title,meta,policy);const download=document.createElement('a');download.className='download';download.href=table.downloadUrl;download.textContent='Download table';download.setAttribute('aria-label','Download '+title.textContent+' table by '+text(table.contributorName,'Community'));card.append(details,download);results.append(card)}resultCount.textContent=tables.length+' '+(tables.length===1?'table':'tables');showState(results)}
+    async function search(){const executable=executableInput.value.trim(),author=authorInput.value.trim().toLowerCase();if(!executable||executable.length>260||/[\\/\u0000-\u001f]/.test(executable)||!executable.toLowerCase().endsWith('.exe')){errorMessage.textContent='Enter a valid executable filename ending in .exe, such as Game.exe.';showState(errorState);executableInput.focus();return}searchButton.disabled=true;showState(loadingState);try{const response=await fetch('/api/modx/tables?executable='+encodeURIComponent(executable),{headers:{Accept:'application/json'}});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.message||payload.error||'The community catalogue could not be loaded.');let tables=Array.isArray(payload.tables)?payload.tables:[];if(author)tables=tables.filter(table=>String(table.contributorName||'').toLowerCase().includes(author));if(!tables.length){emptyMessage.textContent=author?'No published tables match that executable and author. Try checking the author name or searching without it.':'There are no published community tables for that executable yet.';showState(emptyState);return}renderTables(tables)}catch(error){errorMessage.textContent=error.message||'The community catalogue could not be loaded. Please try again.';showState(errorState)}finally{searchButton.disabled=false}}
+    searchForm.addEventListener('submit',event=>{event.preventDefault();search()});
+    const params=new URLSearchParams(location.search);if(params.get('executable')){executableInput.value=params.get('executable');authorInput.value=params.get('author')||'';search()}
+  </script>
+</body>
+</html>
