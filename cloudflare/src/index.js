@@ -260,6 +260,7 @@ async function findTables(url, env) {
          WHERE trpe.normalized_executable = ?1
            AND trpe.platform_id = ?2
            AND tr.status = 'published'
+           AND tr.maintenance_policy = 'community'
            AND NOT EXISTS (SELECT 1 FROM blocked_games bg WHERE bg.game_id = g.id)
          ORDER BY tr.created_at DESC`,
       ).bind(executable, platform)
@@ -271,6 +272,7 @@ async function findTables(url, env) {
              WHERE trpe.table_release_id = tr.id AND trpe.platform_id = ?2
            )
            AND tr.status = 'published'
+           AND tr.maintenance_policy = 'community'
            AND NOT EXISTS (SELECT 1 FROM blocked_games bg WHERE bg.game_id = g.id)
          ORDER BY tr.created_at DESC`,
       ).bind(steamGridDbId, platform);
@@ -327,6 +329,7 @@ async function downloadTable(id, env) {
     `SELECT tr.download_url AS downloadUrl, tr.original_filename AS filename
      FROM table_releases tr
      WHERE tr.id = ?1 AND tr.status = 'published'
+       AND tr.maintenance_policy = 'community'
        AND NOT EXISTS (SELECT 1 FROM blocked_games bg WHERE bg.game_id = tr.game_id)`,
   ).bind(id).first();
   if (!row) throw new HttpError(404, "Table not found");
@@ -580,6 +583,7 @@ async function uploadTableForm(form, env, status) {
     gameExecutableFileSize: executableMetadata?.size || null,
     futureServiceSupport: updatePolicy.futureServiceSupport,
     maintenancePolicy: updatePolicy.maintenancePolicy,
+    listedInCommunity: updatePolicy.maintenancePolicy === "community",
     communityReadmePath,
     communityReadmeDownloadUrl: communityReadmeFile?.downloadUrl || null,
     usePolicy: "Offline/single-player use only",
@@ -599,7 +603,7 @@ async function createGitHubFile(env, { path, bytes, message }) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     console.error("GitHub upload failed", { status: response.status, message: payload.message });
-    throw new HttpError(502, "GitHub rejected the cheat-table upload");
+    throw new HttpError(502, "GitHub rejected the cheat table upload");
   }
   const sha = payload.content?.sha;
   const downloadUrl = payload.content?.download_url || rawGitHubUrl(env, path);
@@ -680,6 +684,7 @@ async function reportCommunityTable(request, id, env) {
   const table = await env.MODX_DB.prepare(
     `SELECT tr.id FROM table_releases tr
      WHERE tr.id = ?1 AND tr.status = 'published'
+       AND tr.maintenance_policy = 'community'
        AND NOT EXISTS (SELECT 1 FROM blocked_games bg WHERE bg.game_id = tr.game_id)`,
   ).bind(id).first();
   if (!table) throw new HttpError(404, "Table not found");
@@ -896,7 +901,7 @@ function parseGameExecutableMetadata(form, required) {
   const size = Number(rawSize);
   if (!name || !name.toLowerCase().endsWith(".exe")) throw new HttpError(400, "Choose a valid Windows game .exe file");
   if (!Number.isSafeInteger(size) || size <= 0) throw new HttpError(400, "The game executable size is invalid");
-  if (!/^[a-f0-9]{64}$/.test(sha256)) throw new HttpError(400, "The game executable fingerprint is invalid");
+  if (!/^[a-f0-9]{64}$/.test(sha256)) throw new HttpError(400, "The game executable verification data is invalid");
   return { name, size, sha256 };
 }
 
@@ -1043,7 +1048,7 @@ function validateCheatTable(buffer) {
   if (sample.includes(0)) throw new HttpError(400, "The .CT file is not valid text/XML.");
   const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes).replace(/^\uFEFF/, "");
   if (!/<CheatTable(?:\s|>)/i.test(text) || !/<\/CheatTable\s*>/i.test(text)) {
-    throw new HttpError(400, "The file is not a valid Cheat Engine table.");
+    throw new HttpError(400, "The file is not a valid cheat table.");
   }
   if (/<!DOCTYPE|<!ENTITY/i.test(text)) {
     throw new HttpError(400, "External XML declarations are not allowed in community tables.");
