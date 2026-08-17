@@ -393,8 +393,10 @@ async function submitCommunityTable(request, env) {
   const updatePolicy = parseUpdatePolicy(form, serviceMetadata.scope, true);
   const gameId = await ensureCommunityGame(env, title, executableMetadata.name);
   form.set("gameId", gameId);
-  form.set("supportedPlatforms", JSON.stringify(["windows"]));
-  form.set("executables", JSON.stringify({ windows: executableMetadata.name }));
+  form.set("supportedPlatforms", JSON.stringify(serviceMetadata.platforms));
+  form.set("executables", JSON.stringify(Object.fromEntries(
+    serviceMetadata.platforms.map((platform) => [platform, executableMetadata.name]),
+  )));
   form.set("serviceScope", serviceMetadata.scope);
   form.set("services", JSON.stringify(serviceMetadata.services));
   form.set("futureServiceSupport", String(updatePolicy.futureServiceSupport));
@@ -867,7 +869,7 @@ function normalizeService(value) {
 function parseServiceMetadata(form, required) {
   const rawScope = String(form.get("serviceScope") || "").trim().toLowerCase();
   const rawServices = String(form.get("services") || "").trim();
-  if (!required && !rawScope && !rawServices) return { scope: "single", services: [] };
+  if (!required && !rawScope && !rawServices) return { scope: "single", services: [], platforms: [] };
   if (rawScope !== "single" && rawScope !== "multiple") {
     throw new HttpError(400, "Choose whether the table supports one service or multiple services");
   }
@@ -881,16 +883,22 @@ function parseServiceMetadata(form, required) {
     throw new HttpError(400, "Enter the supported game service or services");
   }
   const unique = new Map();
+  const platforms = new Set();
   for (const value of services) {
     const name = cleanText(value, 80).replace(/\s+/g, " ");
+    const platformMatch = /^(win|linux)\s*\/\s*(.+)$/i.exec(name);
     const normalized = normalizeService(name);
     if (!name || !normalized || /[\u0000-\u001f]/.test(name)) throw new HttpError(400, "Each supported service must have a valid name");
+    if (!platformMatch || !platformMatch[2].trim()) {
+      throw new HttpError(400, "Use WIN/Service or Linux/Service for every supported service");
+    }
+    platforms.add(platformMatch[1].toLowerCase() === "win" ? "windows" : "linux");
     unique.set(normalized, name);
   }
   const names = [...unique.values()];
   if (rawScope === "single" && names.length !== 1) throw new HttpError(400, "Enter exactly one supported service");
   if (rawScope === "multiple" && names.length < 2) throw new HttpError(400, "Enter at least two supported services");
-  return { scope: rawScope, services: names };
+  return { scope: rawScope, services: names, platforms: [...platforms] };
 }
 
 function parseGameExecutableMetadata(form, required) {
