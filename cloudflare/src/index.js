@@ -50,6 +50,9 @@ export default {
       } else if (request.method === "POST" && path === "/community/submit") {
         requireBridge(request, env);
         response = await submitCommunityTable(request, env);
+      } else if (request.method === "GET" && path === "/community/my-tables") {
+        requireBridge(request, env);
+        response = await listUploaderTables(request, env);
       } else if (request.method === "POST" && /^\/community\/tables\/[^/]+\/report$/.test(path)) {
         requireBridge(request, env);
         response = await reportCommunityTable(request, path.split("/")[3], env);
@@ -82,6 +85,68 @@ function stripPrefix(pathname) {
   return pathname.startsWith("/api/modx")
     ? pathname.slice("/api/modx".length) || "/"
     : pathname;
+}
+
+async function listUploaderTables(request, env) {
+  const uploaderAbuseKey = cleanAbuseKey(request.headers.get("X-ModX-Uploader-Key"));
+  if (!uploaderAbuseKey) throw new HttpError(401, "Uploader identity is missing");
+
+  const { results } = await env.MODX_DB.prepare(
+    `SELECT tr.id, tr.version, tr.original_filename AS filename, tr.sha256,
+            tr.file_size AS fileSize, tr.notes, tr.contributor_name AS contributorName,
+            tr.status, tr.service_scope AS serviceScope,
+            tr.future_service_support AS futureServiceSupport,
+            tr.maintenance_policy AS maintenancePolicy,
+            tr.download_url AS downloadUrl,
+            tr.community_readme_download_url AS communityReadmeDownloadUrl,
+            tr.created_at AS createdAt, g.id AS gameId, g.title AS gameTitle
+     FROM table_releases tr
+     JOIN games g ON g.id = tr.game_id
+     WHERE tr.uploader_abuse_key = ?1
+     ORDER BY tr.created_at DESC`
+  ).bind(uploaderAbuseKey).all();
+
+  const metadataByRelease = new Map(results.map((table) => [table.id, {
+    supportedPlatforms: [], executables: {}, services: [],
+  }]));
+  for (let offset = 0; offset < results.length; offset += 50) {
+    const releases = results.slice(offset, offset + 50);
+    if (!releases.length) continue;
+    const placeholders = releases.map((_, index) => `?${index + 1}`).join(",");
+    const bindings = releases.map((table) => table.id);
+    const platformRows = await env.MODX_DB.prepare(
+      `SELECT table_release_id AS tableReleaseId, platform_id AS platformId,
+              executable_name AS executableName
+       FROM table_release_platform_executables
+       WHERE table_release_id IN (${placeholders})
+       ORDER BY table_release_id, platform_id`
+    ).bind(...bindings).all();
+    for (const row of platformRows.results) {
+      const metadata = metadataByRelease.get(row.tableReleaseId);
+      if (!metadata) continue;
+      if (!metadata.supportedPlatforms.includes(row.platformId)) metadata.supportedPlatforms.push(row.platformId);
+      metadata.executables[row.platformId] = row.executableName;
+    }
+    const serviceRows = await env.MODX_DB.prepare(
+      `SELECT table_release_id AS tableReleaseId, service_name AS serviceName
+       FROM table_release_services
+       WHERE table_release_id IN (${placeholders})
+       ORDER BY table_release_id, service_name`
+    ).bind(...bindings).all();
+    for (const row of serviceRows.results) {
+      const metadata = metadataByRelease.get(row.tableReleaseId);
+      if (metadata && !metadata.services.includes(row.serviceName)) metadata.services.push(row.serviceName);
+    }
+  }
+
+  return json({
+    tables: results.map((table) => ({
+      ...table,
+      futureServiceSupport: Boolean(table.futureServiceSupport),
+      listedInCommunity: table.maintenancePolicy === "community" && table.status === "published",
+      ...metadataByRelease.get(table.id),
+    })),
+  });
 }
 
 async function searchSteamGridDb(url, env) {
