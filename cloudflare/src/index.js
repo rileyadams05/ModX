@@ -38,27 +38,40 @@ export default {
       } else if (request.method === "GET" && path === "/games") {
         response = await listGames(url, env);
       } else if (request.method === "GET" && path === "/tables") {
-        response = await findTables(url, env);
+        response = await findTablesV2(url, env);
       } else if (request.method === "GET" && /^\/tables\/[^/]+\/download$/.test(path)) {
-        response = await downloadTable(path.split("/")[2], env);
+        response = json({ error: "ModX does not host table files. Use the listing's GitHub source." }, 410);
       } else if (request.method === "POST" && path === "/admin/games") {
         requireAdmin(request, env);
         response = await createGame(request, env);
       } else if (request.method === "POST" && path === "/admin/tables") {
         requireAdmin(request, env);
-        response = await uploadTable(request, env);
+        response = json({ error: "Direct .CT uploads are no longer supported." }, 410);
       } else if (request.method === "POST" && path === "/community/submit") {
         requireBridge(request, env);
         response = await submitCommunityTable(request, env);
       } else if (request.method === "GET" && path === "/community/my-tables") {
         requireBridge(request, env);
-        response = await listUploaderTables(request, env);
+        response = await listUploaderTablesV2(request, env);
+      } else if (request.method === "PATCH" && /^\/community\/tables\/[^/]+\/source$/.test(path)) {
+        requireBridge(request, env);
+        response = await replaceCommunitySource(request, path.split("/")[3], env);
+      } else if (request.method === "POST" && /^\/community\/tables\/[^/]+\/maintenance-submissions$/.test(path)) {
+        requireBridge(request, env);
+        response = await submitMaintenanceProposal(request, path.split("/")[3], env);
       } else if (request.method === "POST" && /^\/community\/tables\/[^/]+\/report$/.test(path)) {
         requireBridge(request, env);
         response = await reportCommunityTable(request, path.split("/")[3], env);
       } else if (request.method === "POST" && /^\/admin\/tables\/[^/]+\/take-down$/.test(path)) {
         requireAdmin(request, env);
         response = await takeDownTable(request, path.split("/")[3], env);
+      } else if (request.method === "PATCH" && /^\/admin\/tables\/[^/]+\/source-status$/.test(path)) {
+        requireAdmin(request, env);
+        response = await updateSourceStatus(request, path.split("/")[3], env);
+      } else if (request.method === "POST" && /^\/admin\/maintenance-submissions\/[^/]+\/(approve|reject)$/.test(path)) {
+        requireAdmin(request, env);
+        const parts = path.split("/");
+        response = await reviewMaintenanceProposal(request, parts[3], parts[4], env);
       } else if (request.method === "POST" && /^\/admin\/games\/[^/]+\/block$/.test(path)) {
         requireAdmin(request, env);
         response = await blockGame(request, path.split("/")[3], env);
@@ -85,6 +98,124 @@ function stripPrefix(pathname) {
   return pathname.startsWith("/api/modx")
     ? pathname.slice("/api/modx".length) || "/"
     : pathname;
+}
+
+const V2_TABLE_PROJECTION = `SELECT tr.id, tr.game_id AS gameId, g.title AS gameTitle,
+  tr.game_executable_sha256 AS gameFingerprint, tr.contributor_name AS authorName,
+  tr.original_author_name AS originalAuthorName, tr.current_maintainer_name AS currentMaintainerName,
+  tr.source_url AS sourceUrl, tr.repository_url AS repositoryUrl, tr.table_path AS tablePath,
+  tr.original_source_url AS originalSourceUrl, tr.source_status AS sourceStatus,
+  tr.maintenance_mode AS maintenanceMode, tr.created_at AS createdAt, tr.updated_at AS updatedAt,
+  tr.github_owner AS githubOwner, tr.github_repo AS githubRepo, tr.github_branch AS githubBranch,
+  trpe.executable_name AS gameExecutable
+  FROM table_releases tr JOIN games g ON g.id = tr.game_id
+  JOIN table_release_platform_executables trpe ON trpe.table_release_id = tr.id AND trpe.platform_id = 'windows'`;
+
+function v2TableRecord(row) {
+  const source = row.sourceUrl ? { provider: "github", url: row.sourceUrl, repositoryUrl: row.repositoryUrl,
+    owner: row.githubOwner, repository: row.githubRepo, branch: row.githubBranch, tablePath: row.tablePath } : null;
+  let originalSource = null;
+  if (row.originalSourceUrl) {
+    try { originalSource = parseGitHubSource({ provider: "github", url: row.originalSourceUrl }); } catch {}
+  }
+  return { id: row.id, gameId: row.gameId, gameTitle: row.gameTitle, gameExecutable: row.gameExecutable,
+    gameFingerprint: row.gameFingerprint, author: { name: row.authorName },
+    originalAuthor: { name: row.originalAuthorName || row.authorName },
+    currentMaintainer: row.currentMaintainerName ? { name: row.currentMaintainerName } : null,
+    source, originalSource, sourceStatus: row.sourceStatus, maintenanceMode: row.maintenanceMode,
+    createdAt: row.createdAt, updatedAt: row.updatedAt };
+}
+
+async function findTablesV2(url, env) {
+  const executable = normalizeExecutable(url.searchParams.get("executable"));
+  if (!executable) throw new HttpError(400, "executable is required");
+  const { results } = await env.MODX_DB.prepare(`${V2_TABLE_PROJECTION}
+    WHERE trpe.normalized_executable = ?1 AND tr.status = 'published'
+      AND NOT EXISTS (SELECT 1 FROM blocked_games bg WHERE bg.game_id = g.id)
+    ORDER BY tr.updated_at DESC`).bind(executable).all();
+  return json({ schemaVersion: 2, tables: results.map(v2TableRecord) });
+}
+
+async function listUploaderTablesV2(request, env) {
+  const key = cleanAbuseKey(request.headers.get("X-ModX-Uploader-Key"));
+  if (!key) throw new HttpError(401, "Uploader identity is missing");
+  const { results } = await env.MODX_DB.prepare(`${V2_TABLE_PROJECTION}
+    WHERE tr.uploader_abuse_key = ?1 ORDER BY tr.updated_at DESC`).bind(key).all();
+  return json({ schemaVersion: 2, tables: results.map(v2TableRecord) });
+}
+
+async function replaceCommunitySource(request, id, env) {
+  const body = await request.json().catch(() => null);
+  const key = cleanAbuseKey(body?.maintainerAbuseKey);
+  const source = parseGitHubSource(body?.source);
+  const current = await env.MODX_DB.prepare(
+    "SELECT uploader_abuse_key, current_maintainer_abuse_key FROM table_releases WHERE id = ?1",
+  ).bind(id).first();
+  if (!current) throw new HttpError(404, "Table not found");
+  if (!key || (key !== current.uploader_abuse_key && key !== current.current_maintainer_abuse_key)) {
+    throw new HttpError(403, "Only the author or current maintainer may replace this source.");
+  }
+  await env.MODX_DB.prepare(`UPDATE table_releases SET source_url=?1, repository_url=?2, table_path=?3,
+    github_owner=?4, github_repo=?5, github_branch=?6, github_path=?3, download_url=?1,
+    source_status='available', updated_at=CURRENT_TIMESTAMP WHERE id=?7`)
+    .bind(source.url, source.repositoryUrl, source.tablePath, source.owner, source.repository, source.branch, id).run();
+  return json({ source, sourceStatus: "available" });
+}
+
+async function submitMaintenanceProposal(request, id, env) {
+  const body = await request.json().catch(() => null);
+  const source = parseGitHubSource(body?.source);
+  const contributorName = cleanText(body?.contributorName, 100);
+  const key = cleanAbuseKey(body?.contributorAbuseKey);
+  const notes = cleanText(body?.notes, 1000);
+  if (!contributorName || !key || !notes) throw new HttpError(400, "Contributor identity and update notes are required.");
+  const listing = await env.MODX_DB.prepare("SELECT maintenance_mode FROM table_releases WHERE id=?1 AND status='published'").bind(id).first();
+  if (!listing) throw new HttpError(404, "Table not found");
+  if (listing.maintenance_mode !== "community") throw new HttpError(403, "This listing does not accept community maintenance proposals.");
+  const proposalId = crypto.randomUUID();
+  await env.MODX_DB.prepare(`INSERT INTO maintenance_submissions
+    (id, table_release_id, contributor_name, contributor_abuse_key, source_url, repository_url, table_path, notes)
+    VALUES (?1,?2,?3,?4,?5,?6,?7,?8)`)
+    .bind(proposalId, id, contributorName, key, source.url, source.repositoryUrl, source.tablePath, notes).run();
+  return json({ id: proposalId, status: "pending_review" }, 201);
+}
+
+async function reviewMaintenanceProposal(request, id, decision, env) {
+  const body = await request.json().catch(() => ({}));
+  const reviewer = cleanText(body.reviewer, 100) || "ModX moderator";
+  const proposal = await env.MODX_DB.prepare(
+    "SELECT * FROM maintenance_submissions WHERE id=?1 AND status='pending_review'",
+  ).bind(id).first();
+  if (!proposal) throw new HttpError(404, "Pending maintenance proposal not found");
+  if (decision === "reject") {
+    await env.MODX_DB.prepare(`UPDATE maintenance_submissions SET status='rejected', reviewed_by=?1,
+      reviewed_at=CURRENT_TIMESTAMP WHERE id=?2`).bind(reviewer, id).run();
+    return json({ id, status: "rejected" });
+  }
+  const source = parseGitHubSource({ provider: "github", url: proposal.source_url });
+  await env.MODX_DB.batch([
+    env.MODX_DB.prepare(`UPDATE table_releases SET source_url=?1, repository_url=?2, table_path=?3,
+      github_owner=?4, github_repo=?5, github_branch=?6, github_path=?3, download_url=?1,
+      source_status='available', current_maintainer_name=?7, current_maintainer_abuse_key=?8,
+      updated_at=CURRENT_TIMESTAMP WHERE id=?9`)
+      .bind(source.url, source.repositoryUrl, source.tablePath, source.owner, source.repository, source.branch,
+        proposal.contributor_name, proposal.contributor_abuse_key, proposal.table_release_id),
+    env.MODX_DB.prepare(`UPDATE maintenance_submissions SET status='approved', reviewed_by=?1,
+      reviewed_at=CURRENT_TIMESTAMP WHERE id=?2`).bind(reviewer, id),
+  ]);
+  return json({ id, status: "approved", tableId: proposal.table_release_id, source });
+}
+
+async function updateSourceStatus(request, id, env) {
+  const body = await request.json().catch(() => null);
+  if (!body || !["available", "unavailable"].includes(body.sourceStatus)) {
+    throw new HttpError(400, "sourceStatus must be available or unavailable");
+  }
+  const result = await env.MODX_DB.prepare(
+    "UPDATE table_releases SET source_status=?1, updated_at=CURRENT_TIMESTAMP WHERE id=?2",
+  ).bind(body.sourceStatus, id).run();
+  if (!result.meta?.changes) throw new HttpError(404, "Table not found");
+  return json({ id, sourceStatus: body.sourceStatus });
 }
 
 async function listUploaderTables(request, env) {
@@ -441,38 +572,76 @@ async function uploadTable(request, env) {
 }
 
 async function submitCommunityTable(request, env) {
-  const form = await request.formData();
-  if (String(form.get("offlineOnlyConfirmed")).toLowerCase() !== "true") {
+  if (!String(request.headers.get("content-type") || "").toLowerCase().startsWith("application/json")) {
+    throw new HttpError(415, "Community submissions must use JSON; file uploads are not accepted.");
+  }
+  const body = await request.json().catch(() => null);
+  if (!body || body.offlineOnlyConfirmed !== true) {
     throw new HttpError(400, "Confirm that this table is for offline or single-player use only.");
   }
-  const uploaderAbuseKey = cleanAbuseKey(form.get("uploaderAbuseKey"));
+  const uploaderAbuseKey = cleanAbuseKey(body.uploaderAbuseKey);
   if (!uploaderAbuseKey) throw new HttpError(400, "Uploader abuse protection is missing.");
   const blockedUploader = await env.MODX_DB.prepare(
     "SELECT 1 AS blocked FROM abuse_blocks WHERE uploader_abuse_key = ?1",
   ).bind(uploaderAbuseKey).first();
   if (blockedUploader) throw new HttpError(403, "This account cannot publish community tables.");
-  const executableMetadata = parseGameExecutableMetadata(form, true);
-  const title = titleFromExecutable(executableMetadata.name);
+  const executableName = safeExecutableIdentifier(body.gameExecutable);
+  const fingerprint = String(body.gameFingerprint || "").toLowerCase();
+  if (!executableName || !/^[a-f0-9]{64}$/.test(fingerprint)) throw new HttpError(400, "Game executable metadata is invalid.");
+  const title = titleFromExecutable(executableName);
   if (!title) throw new HttpError(400, "The game name could not be derived from the executable.");
-  const serviceMetadata = parseServiceMetadata(form, true);
-  const updatePolicy = parseUpdatePolicy(form, serviceMetadata.scope, true);
-  const gameId = await ensureCommunityGame(env, title, executableMetadata.name);
-  form.set("gameId", gameId);
-  form.set("supportedPlatforms", JSON.stringify(serviceMetadata.platforms));
-  form.set("executables", JSON.stringify(Object.fromEntries(
-    serviceMetadata.platforms.map((platform) => [platform, executableMetadata.name]),
-  )));
-  form.set("serviceScope", serviceMetadata.scope);
-  form.set("services", JSON.stringify(serviceMetadata.services));
-  form.set("futureServiceSupport", String(updatePolicy.futureServiceSupport));
-  form.set("maintenancePolicy", updatePolicy.maintenancePolicy);
-  form.delete("gameTitle");
-  form.delete("artworkUrl");
-  form.delete("executable");
-  form.delete("executableIds");
-  form.delete("version");
-  form.delete("notes");
-  return uploadTableForm(form, env, "published");
+  const source = parseGitHubSource(body.source);
+  const maintenanceMode = body.maintenanceMode === "community" ? "community" : body.maintenanceMode === "author" ? "author" : null;
+  if (!maintenanceMode) throw new HttpError(400, "Choose a valid maintenance mode.");
+  const authorName = cleanText(body.author?.name || body.originalAuthorName, 100) || "Community";
+  const gameId = await ensureCommunityGame(env, title, executableName);
+  const releaseId = crypto.randomUUID();
+  await env.MODX_DB.batch([
+    env.MODX_DB.prepare(
+      `INSERT INTO table_releases
+       (id, game_id, version, object_key, original_filename, sha256, file_size, contributor_name,
+        status, github_owner, github_repo, github_branch, github_path, download_url,
+        offline_only_confirmed, uploader_abuse_key, scan_status, scan_result_json,
+        game_executable_sha256, game_executable_file_size, maintenance_policy,
+        source_url, repository_url, table_path, original_source_url, source_status,
+        maintenance_mode, original_author_name, current_maintainer_name, current_maintainer_abuse_key)
+       VALUES (?1, ?2, 'Current', ?3, ?4, ?5, 0, ?6, 'published', ?7, ?8, ?9, ?10, ?11,
+               1, ?12, 'passed', '{"catalogueOnly":true}', ?13, ?14, ?15, ?11, ?16, ?10, ?11,
+               'available', ?17, ?6, ?6, ?12)`,
+    ).bind(releaseId, gameId, `github:${source.url}`, source.tablePath || source.repository,
+      fingerprint, authorName, source.owner, source.repository, source.branch, source.tablePath,
+      source.url, uploaderAbuseKey, fingerprint, Number(body.gameExecutableSize) || null,
+      maintenanceMode === "community" ? "community" : "uploader", source.repositoryUrl, maintenanceMode),
+    env.MODX_DB.prepare(
+      `INSERT INTO table_release_platform_executables
+       (table_release_id, platform_id, executable_name, normalized_executable)
+       VALUES (?1, 'windows', ?2, ?3)`,
+    ).bind(releaseId, executableName, normalizeExecutable(executableName)),
+  ]);
+  return json({ id: releaseId, gameId, gameExecutable: executableName, gameFingerprint: fingerprint,
+    author: { name: authorName }, originalAuthor: { name: authorName }, currentMaintainer: { name: authorName },
+    source, originalSource: source, sourceStatus: "available", maintenanceMode,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, 201);
+}
+
+function parseGitHubSource(value) {
+  if (!value || value.provider !== "github") throw new HttpError(400, "A GitHub source is required.");
+  let url;
+  try { url = new URL(String(value.url || "")); } catch { throw new HttpError(400, "The GitHub source is invalid."); }
+  if (url.protocol !== "https:" || url.hostname !== "github.com" || url.username || url.password || url.port || url.search || url.hash) {
+    throw new HttpError(400, "The source must be an https://github.com link.");
+  }
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (parts.length !== 2 && !(parts[2] === "blob" && parts.length >= 5 && parts.at(-1).toLowerCase().endsWith(".ct"))) {
+    throw new HttpError(400, "Use a GitHub repository or .CT file link.");
+  }
+  const owner = cleanText(parts[0], 39), repository = cleanText(parts[1].replace(/\.git$/i, ""), 100);
+  if (!/^[A-Za-z0-9-]+$/.test(owner) || !/^[A-Za-z0-9._-]+$/.test(repository)) throw new HttpError(400, "The GitHub source is invalid.");
+  const branch = parts[2] === "blob" ? parts[3] : null;
+  const tablePath = branch ? parts.slice(4).join("/") : null;
+  const repositoryUrl = `https://github.com/${owner}/${repository}`;
+  return { provider: "github", url: tablePath ? `${repositoryUrl}/blob/${branch}/${tablePath}` : repositoryUrl,
+    repositoryUrl, owner, repository, branch, tablePath };
 }
 
 async function ensureCommunityGame(env, title, executableName) {

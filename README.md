@@ -34,6 +34,6 @@ See `docs/PRODUCT.md` and `docs/CATALOG.md` for the product and community publis
 
 - `src/` — React desktop interface.
 - `src-tauri/` — Rust and Tauri 2 desktop application.
-- `cloudflare/` — ModX catalogue API, validation, GitHub storage integration, and database migrations. Production secrets are configured outside Git and are never committed.
+- `cloudflare/` — ModX catalogue API, GitHub-link validation, maintenance review, and database migrations. Production secrets are configured outside Git and are never committed.
 - `website/` — public ModX publishing and community-table browser source. Vortex Prime hosts these pages and keeps the private account/session bridge in its own repository.
-- `tables/` — created automatically when valid community `.CT` files are published. The table files live in this repository rather than Vortex Prime website storage.
+Community table files remain in creator-owned public GitHub repositories. ModX stores catalogue metadata and attribution only; it does not mirror `.CT` files.
