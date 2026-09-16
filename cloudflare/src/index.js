@@ -54,6 +54,12 @@ export default {
       } else if (request.method === "POST" && path === "/community/resolve-release") {
         requireBridge(request, env);
         response = await resolveCommunityRelease(request, env);
+      } else if (request.method === "GET" && path === "/community/my-tables") {
+        requireBridge(request, env);
+        response = await listUploaderTablesV3(request, env);
+      } else if (request.method === "POST" && /^\/community\/tables\/[^/]+\/refresh$/.test(path)) {
+        requireBridge(request, env);
+        response = await refreshUploaderTable(request, path.split("/")[3], env);
       } else if (request.method === "POST" && /^\/community\/tables\/[^/]+\/report$/.test(path)) {
         requireBridge(request, env);
         response = await reportCommunityTable(request, path.split("/")[3], env);
@@ -82,6 +88,9 @@ export default {
       if (status === 500) console.error("Unhandled request error", error);
       return withCors(json({ error: status === 500 ? "Internal server error" : error.message }, status), origin);
     }
+  },
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil(refreshPublishedReleases(env));
   },
 };
 
@@ -136,6 +145,39 @@ async function findCatalogueTables(url, env) {
       AND NOT EXISTS (SELECT 1 FROM blocked_games bg WHERE bg.game_id = g.id)
     ORDER BY tr.updated_at DESC`).bind(executable).all();
   return json({ schemaVersion: 3, tables: results.map(v3TableRecord) });
+}
+
+async function listUploaderTablesV3(request, env) {
+  const key = cleanAbuseKey(request.headers.get("X-ModX-Uploader-Key"));
+  if (!key) throw new HttpError(401, "Uploader identity is missing");
+  const { results } = await env.MODX_DB.prepare(`${V3_TABLE_PROJECTION}
+    WHERE tr.uploader_abuse_key = ?1 ORDER BY tr.created_at DESC`).bind(key).all();
+  return json({ schemaVersion: 3, tables: results.map(v3TableRecord) });
+}
+
+async function refreshUploaderTable(request, id, env) {
+  const key = cleanAbuseKey(request.headers.get("X-ModX-Uploader-Key"));
+  if (!key) throw new HttpError(401, "Uploader identity is missing");
+  const listing = await env.MODX_DB.prepare(
+    "SELECT id FROM table_releases WHERE id=?1 AND uploader_abuse_key=?2 AND status='published'",
+  ).bind(id, key).first();
+  if (!listing) throw new HttpError(404, "Table not found");
+  return refreshLatestRelease(id, env);
+}
+
+async function refreshPublishedReleases(env) {
+  const { results } = await env.MODX_DB.prepare(
+    `SELECT id FROM table_releases
+     WHERE status='published' AND release_url IS NOT NULL
+     ORDER BY COALESCE(release_checked_at, '1970-01-01') ASC LIMIT 50`,
+  ).all();
+  for (const listing of results) {
+    try {
+      await refreshLatestRelease(listing.id, env);
+    } catch (error) {
+      console.warn("Automatic ModX release refresh failed", listing.id, error?.message || error);
+    }
+  }
 }
 
 async function updateSourceStatus(request, id, env) {
@@ -619,7 +661,8 @@ async function refreshLatestRelease(id, env) {
     sha256=?4, file_size=?5, download_url=?6, source_url=?7, source_status='available',
     release_url=?7, release_tag=?1, github_release_id=?8, release_commit_sha=?9,
     release_published_at=?10, release_checked_at=?11, release_asset_id=?12,
-    release_asset_name=?3, release_asset_url=?6, release_asset_digest=?13
+    release_asset_name=?3, release_asset_url=?6, release_asset_digest=?13,
+    updated_at=CASE WHEN release_tag<>?1 THEN CURRENT_TIMESTAMP ELSE updated_at END
     WHERE id=?14`)
     .bind(latest.tag, `github-release:${latest.releaseUrl}`, latest.asset.name,
       latest.assetDigest || latest.commitSha.padEnd(64, "0").slice(0, 64), latest.asset.size,

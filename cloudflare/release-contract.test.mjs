@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { parseGitHubSource, selectCtAsset, verifyGitHubRelease } from "./src/index.js";
+import { readFile } from "node:fs/promises";
+import worker, { parseGitHubSource, selectCtAsset, verifyGitHubRelease } from "./src/index.js";
+
+assert.equal(typeof worker.scheduled, "function", "automatic release refresh scheduler is missing");
+const wranglerConfig = JSON.parse((await readFile(new URL("./wrangler.jsonc", import.meta.url), "utf8"))
+  .replace(/^\s*\/\/.*$/gm, ""));
+assert.deepEqual(wranglerConfig.triggers?.crons, ["0 * * * *"]);
 
 const release = parseGitHubSource({
   provider: "github",

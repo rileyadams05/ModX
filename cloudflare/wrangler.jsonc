@@ -15,6 +15,9 @@
   "observability": {
     "enabled": true
   },
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
   "vars": {
     "GITHUB_OWNER": "rileyadams05",
     "GITHUB_REPO": "ModX",

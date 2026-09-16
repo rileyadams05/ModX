@@ -32,6 +32,8 @@ Send `Authorization: Bearer <MODX_ADMIN_TOKEN>`.
 
 `POST /community/submit` is bridge-only and accepts JSON containing the locally derived executable filename/fingerprint, verified GitHub Release source, optional selected release asset, attribution, `maintenanceMode` (`author` or `community`), and the offline/single-player declaration. The Worker verifies the release again before storing it. Neither the executable nor the `.CT` asset is uploaded to ModX.
 
+The Worker checks published listings hourly and refreshes their version and selected asset from the latest published Release in the same canonical repository. `GET /community/my-tables` returns only listings matching the authenticated uploader key. `POST /community/tables/:id/refresh` is the owner-only manual fallback when an automatic check has not appeared yet; it cannot change the canonical repository.
+
 Maintenance contributions are managed through GitHub. `community` means the wider community may submit updates for review, accepted updates are merged into the same canonical repository, and official Releases continue to be published from that repository. ModX never switches the listing to a contributor's copy or alternate repository and does not operate its own proposal, source-replacement, or approve/reject workflow.
 
 `POST /community/tables/:id/report` is also bridge-only. Supported reasons include `online_or_multiplayer_cheating` (shown to users as `Online or multiplayer cheating`). Reports are reactive moderation signals; they do not create a pre-publication approval queue.
