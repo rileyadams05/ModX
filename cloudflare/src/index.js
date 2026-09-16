@@ -38,7 +38,9 @@ export default {
       } else if (request.method === "GET" && path === "/games") {
         response = await listGames(url, env);
       } else if (request.method === "GET" && path === "/tables") {
-        response = await findTablesV2(url, env);
+        response = await findCatalogueTables(url, env);
+      } else if (request.method === "GET" && /^\/tables\/[^/]+\/releases\/latest$/.test(path)) {
+        response = await refreshLatestRelease(path.split("/")[2], env);
       } else if (request.method === "GET" && /^\/tables\/[^/]+\/download$/.test(path)) {
         response = json({ error: "ModX does not host table files. Use the listing's GitHub source." }, 410);
       } else if (request.method === "POST" && path === "/admin/games") {
@@ -50,15 +52,9 @@ export default {
       } else if (request.method === "POST" && path === "/community/submit") {
         requireBridge(request, env);
         response = await submitCommunityTable(request, env);
-      } else if (request.method === "GET" && path === "/community/my-tables") {
+      } else if (request.method === "POST" && path === "/community/resolve-release") {
         requireBridge(request, env);
-        response = await listUploaderTablesV2(request, env);
-      } else if (request.method === "PATCH" && /^\/community\/tables\/[^/]+\/source$/.test(path)) {
-        requireBridge(request, env);
-        response = await replaceCommunitySource(request, path.split("/")[3], env);
-      } else if (request.method === "POST" && /^\/community\/tables\/[^/]+\/maintenance-submissions$/.test(path)) {
-        requireBridge(request, env);
-        response = await submitMaintenanceProposal(request, path.split("/")[3], env);
+        response = await resolveCommunityRelease(request, env);
       } else if (request.method === "POST" && /^\/community\/tables\/[^/]+\/report$/.test(path)) {
         requireBridge(request, env);
         response = await reportCommunityTable(request, path.split("/")[3], env);
@@ -68,10 +64,6 @@ export default {
       } else if (request.method === "PATCH" && /^\/admin\/tables\/[^/]+\/source-status$/.test(path)) {
         requireAdmin(request, env);
         response = await updateSourceStatus(request, path.split("/")[3], env);
-      } else if (request.method === "POST" && /^\/admin\/maintenance-submissions\/[^/]+\/(approve|reject)$/.test(path)) {
-        requireAdmin(request, env);
-        const parts = path.split("/");
-        response = await reviewMaintenanceProposal(request, parts[3], parts[4], env);
       } else if (request.method === "POST" && /^\/admin\/games\/[^/]+\/block$/.test(path)) {
         requireAdmin(request, env);
         response = await blockGame(request, path.split("/")[3], env);
@@ -100,20 +92,26 @@ function stripPrefix(pathname) {
     : pathname;
 }
 
-const V2_TABLE_PROJECTION = `SELECT tr.id, tr.game_id AS gameId, g.title AS gameTitle,
+const V3_TABLE_PROJECTION = `SELECT tr.id, tr.game_id AS gameId, g.title AS gameTitle, tr.version,
   tr.game_executable_sha256 AS gameFingerprint, tr.contributor_name AS authorName,
-  tr.original_author_name AS originalAuthorName, tr.current_maintainer_name AS currentMaintainerName,
   tr.source_url AS sourceUrl, tr.repository_url AS repositoryUrl, tr.table_path AS tablePath,
   tr.original_source_url AS originalSourceUrl, tr.source_status AS sourceStatus,
   tr.maintenance_mode AS maintenanceMode, tr.created_at AS createdAt, tr.updated_at AS updatedAt,
-  tr.github_owner AS githubOwner, tr.github_repo AS githubRepo, tr.github_branch AS githubBranch,
+  tr.original_author_name AS originalAuthorName, tr.github_owner AS githubOwner, tr.github_repo AS githubRepo,
+  tr.release_url AS releaseUrl, tr.release_tag AS releaseTag, tr.github_release_id AS githubReleaseId,
+  tr.release_commit_sha AS releaseCommitSha, tr.release_published_at AS releasePublishedAt,
+  tr.release_checked_at AS releaseCheckedAt, tr.release_asset_id AS releaseAssetId,
+  tr.release_asset_name AS releaseAssetName, tr.release_asset_url AS releaseAssetUrl,
+  tr.release_asset_digest AS releaseAssetDigest,
   trpe.executable_name AS gameExecutable
   FROM table_releases tr JOIN games g ON g.id = tr.game_id
   JOIN table_release_platform_executables trpe ON trpe.table_release_id = tr.id AND trpe.platform_id = 'windows'`;
 
-function v2TableRecord(row) {
-  const source = row.sourceUrl ? { provider: "github", url: row.sourceUrl, repositoryUrl: row.repositoryUrl,
-    owner: row.githubOwner, repository: row.githubRepo, branch: row.githubBranch, tablePath: row.tablePath } : null;
+function v3TableRecord(row) {
+  const releaseUrl = row.releaseUrl || row.sourceUrl;
+  const source = releaseUrl ? { provider: "github", url: releaseUrl, releaseUrl,
+    repositoryUrl: row.repositoryUrl, owner: row.githubOwner, repository: row.githubRepo,
+    tag: row.releaseTag || row.version, version: row.releaseTag || row.version } : null;
   let originalSource = null;
   if (row.originalSourceUrl) {
     try { originalSource = parseGitHubSource({ provider: "github", url: row.originalSourceUrl }); } catch {}
@@ -121,89 +119,24 @@ function v2TableRecord(row) {
   return { id: row.id, gameId: row.gameId, gameTitle: row.gameTitle, gameExecutable: row.gameExecutable,
     gameFingerprint: row.gameFingerprint, author: { name: row.authorName },
     originalAuthor: { name: row.originalAuthorName || row.authorName },
-    currentMaintainer: row.currentMaintainerName ? { name: row.currentMaintainerName } : null,
+    github: source ? { repositoryUrl: source.repositoryUrl, releaseUrl: source.releaseUrl,
+      owner: source.owner, repository: source.repository, tag: source.tag } : null,
+    version: row.releaseTag || row.version, release: source ? { tag: source.tag,
+      releaseId: row.githubReleaseId, commitSha: row.releaseCommitSha, publishedAt: row.releasePublishedAt,
+      checkedAt: row.releaseCheckedAt, asset: row.releaseAssetId ? { id: row.releaseAssetId,
+        name: row.releaseAssetName, downloadUrl: row.releaseAssetUrl, digest: row.releaseAssetDigest || null } : null } : null,
     source, originalSource, sourceStatus: row.sourceStatus, maintenanceMode: row.maintenanceMode,
     createdAt: row.createdAt, updatedAt: row.updatedAt };
 }
 
-async function findTablesV2(url, env) {
+async function findCatalogueTables(url, env) {
   const executable = normalizeExecutable(url.searchParams.get("executable"));
   if (!executable) throw new HttpError(400, "executable is required");
-  const { results } = await env.MODX_DB.prepare(`${V2_TABLE_PROJECTION}
+  const { results } = await env.MODX_DB.prepare(`${V3_TABLE_PROJECTION}
     WHERE trpe.normalized_executable = ?1 AND tr.status = 'published'
       AND NOT EXISTS (SELECT 1 FROM blocked_games bg WHERE bg.game_id = g.id)
     ORDER BY tr.updated_at DESC`).bind(executable).all();
-  return json({ schemaVersion: 2, tables: results.map(v2TableRecord) });
-}
-
-async function listUploaderTablesV2(request, env) {
-  const key = cleanAbuseKey(request.headers.get("X-ModX-Uploader-Key"));
-  if (!key) throw new HttpError(401, "Uploader identity is missing");
-  const { results } = await env.MODX_DB.prepare(`${V2_TABLE_PROJECTION}
-    WHERE tr.uploader_abuse_key = ?1 ORDER BY tr.updated_at DESC`).bind(key).all();
-  return json({ schemaVersion: 2, tables: results.map(v2TableRecord) });
-}
-
-async function replaceCommunitySource(request, id, env) {
-  const body = await request.json().catch(() => null);
-  const key = cleanAbuseKey(body?.maintainerAbuseKey);
-  const source = parseGitHubSource(body?.source);
-  const current = await env.MODX_DB.prepare(
-    "SELECT uploader_abuse_key, current_maintainer_abuse_key FROM table_releases WHERE id = ?1",
-  ).bind(id).first();
-  if (!current) throw new HttpError(404, "Table not found");
-  if (!key || (key !== current.uploader_abuse_key && key !== current.current_maintainer_abuse_key)) {
-    throw new HttpError(403, "Only the author or current maintainer may replace this source.");
-  }
-  await env.MODX_DB.prepare(`UPDATE table_releases SET source_url=?1, repository_url=?2, table_path=?3,
-    github_owner=?4, github_repo=?5, github_branch=?6, github_path=?3, download_url=?1,
-    source_status='available', updated_at=CURRENT_TIMESTAMP WHERE id=?7`)
-    .bind(source.url, source.repositoryUrl, source.tablePath, source.owner, source.repository, source.branch, id).run();
-  return json({ source, sourceStatus: "available" });
-}
-
-async function submitMaintenanceProposal(request, id, env) {
-  const body = await request.json().catch(() => null);
-  const source = parseGitHubSource(body?.source);
-  const contributorName = cleanText(body?.contributorName, 100);
-  const key = cleanAbuseKey(body?.contributorAbuseKey);
-  const notes = cleanText(body?.notes, 1000);
-  if (!contributorName || !key || !notes) throw new HttpError(400, "Contributor identity and update notes are required.");
-  const listing = await env.MODX_DB.prepare("SELECT maintenance_mode FROM table_releases WHERE id=?1 AND status='published'").bind(id).first();
-  if (!listing) throw new HttpError(404, "Table not found");
-  if (listing.maintenance_mode !== "community") throw new HttpError(403, "This listing does not accept community maintenance proposals.");
-  const proposalId = crypto.randomUUID();
-  await env.MODX_DB.prepare(`INSERT INTO maintenance_submissions
-    (id, table_release_id, contributor_name, contributor_abuse_key, source_url, repository_url, table_path, notes)
-    VALUES (?1,?2,?3,?4,?5,?6,?7,?8)`)
-    .bind(proposalId, id, contributorName, key, source.url, source.repositoryUrl, source.tablePath, notes).run();
-  return json({ id: proposalId, status: "pending_review" }, 201);
-}
-
-async function reviewMaintenanceProposal(request, id, decision, env) {
-  const body = await request.json().catch(() => ({}));
-  const reviewer = cleanText(body.reviewer, 100) || "ModX moderator";
-  const proposal = await env.MODX_DB.prepare(
-    "SELECT * FROM maintenance_submissions WHERE id=?1 AND status='pending_review'",
-  ).bind(id).first();
-  if (!proposal) throw new HttpError(404, "Pending maintenance proposal not found");
-  if (decision === "reject") {
-    await env.MODX_DB.prepare(`UPDATE maintenance_submissions SET status='rejected', reviewed_by=?1,
-      reviewed_at=CURRENT_TIMESTAMP WHERE id=?2`).bind(reviewer, id).run();
-    return json({ id, status: "rejected" });
-  }
-  const source = parseGitHubSource({ provider: "github", url: proposal.source_url });
-  await env.MODX_DB.batch([
-    env.MODX_DB.prepare(`UPDATE table_releases SET source_url=?1, repository_url=?2, table_path=?3,
-      github_owner=?4, github_repo=?5, github_branch=?6, github_path=?3, download_url=?1,
-      source_status='available', current_maintainer_name=?7, current_maintainer_abuse_key=?8,
-      updated_at=CURRENT_TIMESTAMP WHERE id=?9`)
-      .bind(source.url, source.repositoryUrl, source.tablePath, source.owner, source.repository, source.branch,
-        proposal.contributor_name, proposal.contributor_abuse_key, proposal.table_release_id),
-    env.MODX_DB.prepare(`UPDATE maintenance_submissions SET status='approved', reviewed_by=?1,
-      reviewed_at=CURRENT_TIMESTAMP WHERE id=?2`).bind(reviewer, id),
-  ]);
-  return json({ id, status: "approved", tableId: proposal.table_release_id, source });
+  return json({ schemaVersion: 3, tables: results.map(v3TableRecord) });
 }
 
 async function updateSourceStatus(request, id, env) {
@@ -591,6 +524,7 @@ async function submitCommunityTable(request, env) {
   const title = titleFromExecutable(executableName);
   if (!title) throw new HttpError(400, "The game name could not be derived from the executable.");
   const source = parseGitHubSource(body.source);
+  const verifiedRelease = await verifyGitHubRelease(source, env, body.releaseAssetId, true);
   const maintenanceMode = body.maintenanceMode === "community" ? "community" : body.maintenanceMode === "author" ? "author" : null;
   if (!maintenanceMode) throw new HttpError(400, "Choose a valid maintenance mode.");
   const authorName = cleanText(body.author?.name || body.originalAuthorName, 100) || "Community";
@@ -604,14 +538,22 @@ async function submitCommunityTable(request, env) {
         offline_only_confirmed, uploader_abuse_key, scan_status, scan_result_json,
         game_executable_sha256, game_executable_file_size, maintenance_policy,
         source_url, repository_url, table_path, original_source_url, source_status,
-        maintenance_mode, original_author_name, current_maintainer_name, current_maintainer_abuse_key)
-       VALUES (?1, ?2, 'Current', ?3, ?4, ?5, 0, ?6, 'published', ?7, ?8, ?9, ?10, ?11,
-               1, ?12, 'passed', '{"catalogueOnly":true}', ?13, ?14, ?15, ?11, ?16, ?10, ?11,
-               'available', ?17, ?6, ?6, ?12)`,
-    ).bind(releaseId, gameId, `github:${source.url}`, source.tablePath || source.repository,
-      fingerprint, authorName, source.owner, source.repository, source.branch, source.tablePath,
-      source.url, uploaderAbuseKey, fingerprint, Number(body.gameExecutableSize) || null,
-      maintenanceMode === "community" ? "community" : "uploader", source.repositoryUrl, maintenanceMode),
+        maintenance_mode, original_author_name, current_maintainer_name, current_maintainer_abuse_key,
+        release_url, release_tag, github_release_id, release_commit_sha, release_published_at,
+        release_checked_at, release_asset_id, release_asset_name, release_asset_url, release_asset_digest)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'published', ?9, ?10, NULL, NULL, ?11,
+               1, ?12, 'passed', '{"catalogueOnly":true,"source":"github-release"}', ?13, ?14, ?15,
+               ?16, ?17, NULL, ?16, 'available', ?18, ?8, ?8, ?12,
+               ?16, ?3, ?19, ?20, ?21, ?22, ?23, ?5, ?24, ?25)`,
+    ).bind(releaseId, gameId, verifiedRelease.tag, `github-release:${verifiedRelease.releaseUrl}`,
+      verifiedRelease.asset.name, verifiedRelease.assetDigest || fingerprint, verifiedRelease.asset.size,
+      authorName, source.owner, source.repository, verifiedRelease.asset.downloadUrl, uploaderAbuseKey,
+      fingerprint, Number(body.gameExecutableSize) || null,
+      maintenanceMode === "community" ? "community" : "uploader", verifiedRelease.releaseUrl,
+      source.repositoryUrl, maintenanceMode,
+      verifiedRelease.releaseId, verifiedRelease.commitSha, verifiedRelease.publishedAt,
+      verifiedRelease.checkedAt, verifiedRelease.asset.id, verifiedRelease.asset.downloadUrl,
+      verifiedRelease.assetDigest),
     env.MODX_DB.prepare(
       `INSERT INTO table_release_platform_executables
        (table_release_id, platform_id, executable_name, normalized_executable)
@@ -619,29 +561,151 @@ async function submitCommunityTable(request, env) {
     ).bind(releaseId, executableName, normalizeExecutable(executableName)),
   ]);
   return json({ id: releaseId, gameId, gameExecutable: executableName, gameFingerprint: fingerprint,
-    author: { name: authorName }, originalAuthor: { name: authorName }, currentMaintainer: { name: authorName },
-    source, originalSource: source, sourceStatus: "available", maintenanceMode,
+    author: { name: authorName }, originalAuthor: { name: authorName },
+    github: { repositoryUrl: source.repositoryUrl, releaseUrl: verifiedRelease.releaseUrl,
+      owner: source.owner, repository: source.repository, tag: verifiedRelease.tag },
+    version: verifiedRelease.tag, release: releaseResponse(verifiedRelease),
+    source: { ...source, url: verifiedRelease.releaseUrl, releaseUrl: verifiedRelease.releaseUrl,
+      tag: verifiedRelease.tag, version: verifiedRelease.tag }, originalSource: source,
+    sourceStatus: "available", maintenanceMode,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, 201);
 }
 
 function parseGitHubSource(value) {
-  if (!value || value.provider !== "github") throw new HttpError(400, "A GitHub source is required.");
+  if (!value || value.provider !== "github") throw new HttpError(400, "A GitHub Release URL is required.");
   let url;
-  try { url = new URL(String(value.url || "")); } catch { throw new HttpError(400, "The GitHub source is invalid."); }
+  try { url = new URL(String(value.releaseUrl || value.url || "")); } catch { throw new HttpError(400, "The GitHub Release URL is invalid."); }
   if (url.protocol !== "https:" || url.hostname !== "github.com" || url.username || url.password || url.port || url.search || url.hash) {
-    throw new HttpError(400, "The source must be an https://github.com link.");
+    throw new HttpError(400, "The release must be an https://github.com link.");
   }
-  const parts = url.pathname.split("/").filter(Boolean);
-  if (parts.length !== 2 && !(parts[2] === "blob" && parts.length >= 5 && parts.at(-1).toLowerCase().endsWith(".ct"))) {
-    throw new HttpError(400, "Use a GitHub repository or .CT file link.");
+  const parts = url.pathname.split("/").filter(Boolean).map((part) => {
+    try { return decodeURIComponent(part); } catch { throw new HttpError(400, "The GitHub Release URL contains invalid characters."); }
+  });
+  if (parts.length < 5 || parts[2] !== "releases" || parts[3] !== "tag") {
+    throw new HttpError(400, "Use the full GitHub Release URL in /OWNER/REPOSITORY/releases/tag/VERSION format.");
   }
   const owner = cleanText(parts[0], 39), repository = cleanText(parts[1].replace(/\.git$/i, ""), 100);
-  if (!/^[A-Za-z0-9-]+$/.test(owner) || !/^[A-Za-z0-9._-]+$/.test(repository)) throw new HttpError(400, "The GitHub source is invalid.");
-  const branch = parts[2] === "blob" ? parts[3] : null;
-  const tablePath = branch ? parts.slice(4).join("/") : null;
+  const tag = cleanText(parts.slice(4).join("/"), 200);
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(owner) || /--/.test(owner)
+      || !repository || !/^[A-Za-z0-9._-]+$/.test(repository) || repository === "." || repository === ".."
+      || !tag || /[\u0000-\u001f\u007f]/.test(tag)) throw new HttpError(400, "The GitHub Release URL is invalid.");
   const repositoryUrl = `https://github.com/${owner}/${repository}`;
-  return { provider: "github", url: tablePath ? `${repositoryUrl}/blob/${branch}/${tablePath}` : repositoryUrl,
-    repositoryUrl, owner, repository, branch, tablePath };
+  const encodedTag = tag.split("/").map(encodeURIComponent).join("/");
+  const releaseUrl = `${repositoryUrl}/releases/tag/${encodedTag}`;
+  return { provider: "github", url: releaseUrl, releaseUrl, repositoryUrl, owner, repository,
+    tag, version: tag };
+}
+
+async function resolveCommunityRelease(request, env) {
+  const body = await readJson(request);
+  const source = parseGitHubSource(body?.source);
+  const verified = await verifyGitHubRelease(source, env, body?.releaseAssetId, false);
+  return json({ source, version: verified.tag, release: releaseResponse(verified),
+    ctAssets: verified.ctAssets, assetSelectionRequired: !verified.asset });
+}
+
+async function refreshLatestRelease(id, env) {
+  const current = await env.MODX_DB.prepare(
+    `SELECT id, github_owner AS owner, github_repo AS repository, release_tag AS releaseTag,
+            release_asset_name AS assetName
+     FROM table_releases WHERE id=?1 AND status='published'`,
+  ).bind(id).first();
+  if (!current) throw new HttpError(404, "Table not found");
+  const latest = await verifyLatestGitHubRelease(current.owner, current.repository, current.assetName, env);
+  if (!latest.asset) {
+    return json({ id, updateAvailable: current.releaseTag !== latest.tag, assetSelectionRequired: true,
+      version: latest.tag, release: releaseResponse(latest), ctAssets: latest.ctAssets }, 409);
+  }
+  await env.MODX_DB.prepare(`UPDATE table_releases SET version=?1, object_key=?2, original_filename=?3,
+    sha256=?4, file_size=?5, download_url=?6, source_url=?7, source_status='available',
+    release_url=?7, release_tag=?1, github_release_id=?8, release_commit_sha=?9,
+    release_published_at=?10, release_checked_at=?11, release_asset_id=?12,
+    release_asset_name=?3, release_asset_url=?6, release_asset_digest=?13
+    WHERE id=?14`)
+    .bind(latest.tag, `github-release:${latest.releaseUrl}`, latest.asset.name,
+      latest.assetDigest || latest.commitSha.padEnd(64, "0").slice(0, 64), latest.asset.size,
+      latest.asset.downloadUrl, latest.releaseUrl, latest.releaseId, latest.commitSha,
+      latest.publishedAt, latest.checkedAt, latest.asset.id, latest.assetDigest, id).run();
+  return json({ id, updateAvailable: current.releaseTag !== latest.tag,
+    version: latest.tag, release: releaseResponse(latest) });
+}
+
+function releaseResponse(verified) {
+  return { tag: verified.tag, releaseId: verified.releaseId, commitSha: verified.commitSha,
+    publishedAt: verified.publishedAt, checkedAt: verified.checkedAt, asset: verified.asset || null };
+}
+
+async function verifyGitHubRelease(source, env, requestedAssetId, requireAsset) {
+  await verifyPublicGitHubRepository(source.owner, source.repository, env);
+  const release = await githubApiJson(
+    `https://api.github.com/repos/${encodeURIComponent(source.owner)}/${encodeURIComponent(source.repository)}/releases/tags/${encodeURIComponent(source.tag)}`, env,
+  );
+  return normalizeVerifiedRelease(source, release, requestedAssetId, null, requireAsset, env);
+}
+
+async function verifyLatestGitHubRelease(owner, repository, preferredAssetName, env) {
+  await verifyPublicGitHubRepository(owner, repository, env);
+  const source = { owner, repository, repositoryUrl: `https://github.com/${owner}/${repository}` };
+  const release = await githubApiJson(
+    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/releases/latest`, env,
+  );
+  source.tag = cleanText(release.tag_name, 200);
+  source.releaseUrl = `${source.repositoryUrl}/releases/tag/${source.tag.split("/").map(encodeURIComponent).join("/")}`;
+  return normalizeVerifiedRelease(source, release, null, preferredAssetName, false, env);
+}
+
+async function verifyPublicGitHubRepository(owner, repository, env) {
+  const metadata = await githubApiJson(
+    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}`, env,
+  );
+  if (metadata.private || metadata.visibility && metadata.visibility !== "public") {
+    throw new HttpError(400, "The GitHub repository must be public.");
+  }
+}
+
+async function normalizeVerifiedRelease(source, release, requestedAssetId, preferredAssetName, requireAsset, env) {
+  if (!release || release.draft || !release.published_at || cleanText(release.tag_name, 200) !== source.tag) {
+    throw new HttpError(400, "The URL must point to a published GitHub Release.");
+  }
+  const ctAssets = (Array.isArray(release.assets) ? release.assets : [])
+    .filter((asset) => asset?.state === "uploaded" && String(asset.name || "").toLowerCase().endsWith(".ct"))
+    .map((asset) => ({ id: String(asset.id), name: cleanText(asset.name, 180),
+      downloadUrl: String(asset.browser_download_url || ""), size: Number(asset.size) || 0,
+      digest: cleanText(asset.digest, 160) || null }));
+  const asset = selectCtAsset(ctAssets, requestedAssetId, preferredAssetName);
+  if (requestedAssetId && !asset) throw new HttpError(400, "Select a valid .CT asset from this GitHub Release.");
+  if (!ctAssets.length) throw new HttpError(400, "The GitHub Release must contain a .CT asset.");
+  if (requireAsset && !asset) throw new HttpError(400, "This release contains multiple .CT assets. Select the intended table asset.");
+  const commit = await githubApiJson(
+    `https://api.github.com/repos/${encodeURIComponent(source.owner)}/${encodeURIComponent(source.repository)}/commits/${encodeURIComponent(source.tag)}`, env,
+  );
+  const commitSha = cleanText(commit.sha, 64).toLowerCase();
+  if (!/^[a-f0-9]{40,64}$/.test(commitSha)) throw new HttpError(502, "GitHub did not return the Release commit.");
+  const releaseUrl = `${source.repositoryUrl}/releases/tag/${source.tag.split("/").map(encodeURIComponent).join("/")}`;
+  return { releaseUrl, repositoryUrl: source.repositoryUrl, tag: source.tag,
+    releaseId: String(release.id), commitSha,
+    publishedAt: release.published_at, checkedAt: new Date().toISOString(), ctAssets, asset,
+    assetDigest: asset?.digest?.replace(/^sha256:/i, "") || null };
+}
+
+function selectCtAsset(ctAssets, requestedAssetId, preferredAssetName) {
+  let asset = requestedAssetId ? ctAssets.find((item) => item.id === String(requestedAssetId)) : null;
+  if (!asset && preferredAssetName) {
+    const normalizedPreferredName = String(preferredAssetName).toLowerCase();
+    asset = ctAssets.find((item) => item.name.toLowerCase() === normalizedPreferredName) || null;
+  }
+  if (!asset && ctAssets.length === 1) asset = ctAssets[0];
+  return asset || null;
+}
+
+async function githubApiJson(url, env) {
+  const headers = { Accept: "application/vnd.github+json", "User-Agent": "ModX-Catalogue",
+    "X-GitHub-Api-Version": "2026-03-10" };
+  if (env.GITHUB_TOKEN) headers.Authorization = `Bearer ${env.GITHUB_TOKEN}`;
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
+  if (response.status === 404) throw new HttpError(400, "The public GitHub repository or Release could not be found.");
+  if (!response.ok) throw new HttpError(502, "GitHub could not verify this Release. Try again later.");
+  return await response.json();
 }
 
 async function ensureCommunityGame(env, title, executableName) {
@@ -1329,3 +1393,5 @@ class HttpError extends Error {
     this.status = status;
   }
 }
+
+export { parseGitHubSource, selectCtAsset, verifyGitHubRelease };

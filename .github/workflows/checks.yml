@@ -36,3 +36,6 @@ jobs:
 
       - name: Check ModX API source
         run: node --check cloudflare/src/index.js
+
+      - name: Test ModX GitHub Release contract
+        run: npm run test:cloudflare
