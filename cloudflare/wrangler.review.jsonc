@@ -1,0 +1,37 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "modx-submission-review",
+  "main": "src/review-worker.js",
+  "compatibility_date": "2026-09-16",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "d1_databases": [
+    {
+      "binding": "MODX_DB",
+      "database_name": "modx-catalog",
+      "database_id": "e4b05c96-930a-4012-8980-cfcd697d0c19",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "consumers": [
+      {
+        "queue": "modx-submission-reviews",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "modx-submission-reviews-dead"
+      }
+    ]
+  }
+}

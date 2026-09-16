@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import worker, { parseGitHubSource, selectCtAsset, verifyGitHubRelease } from "./src/index.js";
+import { parseCheatTable, classifyDeterministicIntent, combineDecision } from "./src/review-worker.js";
 
 assert.equal(typeof worker.scheduled, "function", "automatic release refresh scheduler is missing");
 const wranglerConfig = JSON.parse((await readFile(new URL("./wrangler.jsonc", import.meta.url), "utf8"))
   .replace(/^\s*\/\/.*$/gm, ""));
 assert.deepEqual(wranglerConfig.triggers?.crons, ["0 * * * *"]);
+assert.equal(wranglerConfig.queues?.producers?.[0]?.binding, "SUBMISSION_REVIEW_QUEUE");
+const reviewConfig = JSON.parse((await readFile(new URL("./wrangler.review.jsonc", import.meta.url), "utf8"))
+  .replace(/^\s*\/\/.*$/gm, ""));
+assert.equal(reviewConfig.queues?.consumers?.[0]?.queue, "modx-submission-reviews");
+assert.equal(reviewConfig.ai?.binding, "AI");
 
 const release = parseGitHubSource({
   provider: "github",
@@ -91,4 +97,23 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-console.log("ModX GitHub Release contract test passed.");
+const safeCt = new TextEncoder().encode(`<?xml version="1.0"?><CheatTable CheatEngineTableVersion="45">
+  <CheatEntries><CheatEntry><ID>1</ID><Description>Infinite health (offline only)</Description>
+  <VariableType>Auto Assembler Script</VariableType><AssemblerScript>[ENABLE]\naobscanmodule(health,Game.exe,90 90)\n[DISABLE]</AssemblerScript>
+  </CheatEntry></CheatEntries><ProcessName>Game.exe</ProcessName><Comments>Do not use this table online.</Comments></CheatTable>`);
+const parsedCt = parseCheatTable(safeCt, "Game.exe");
+assert.equal(parsedCt.entryCount, 1);
+assert.deepEqual(parsedCt.processNames, ["Game.exe"]);
+assert.equal(parsedCt.processMismatch, false);
+assert.equal(parsedCt.containsAutoAssembler, true);
+assert.throws(() => parseCheatTable(new TextEncoder().encode("<!DOCTYPE x><CheatTable><CheatEntries></CheatEntries></CheatTable>")), /External XML/);
+assert.equal(classifyDeterministicIntent("Do not use this trainer online. Offline only.").decision, "review");
+assert.equal(classifyDeterministicIntent("Competitive ranked multiplayer aimbot cheat for public lobbies").decision, "reject");
+assert.equal(combineDecision({ gameEligible: true, forcedDecision: null,
+  deterministic: { decision: "review", confidence: 0.5, reasons: [], flags: [] },
+  aiResult: { decision: "pass", confidence: 0.94, reasons: ["Offline intent is explicit."], flags: [] } }).decision, "pass");
+assert.equal(combineDecision({ gameEligible: false, forcedDecision: null,
+  deterministic: { decision: "review", confidence: 0.5, reasons: [], flags: [] },
+  aiResult: { decision: "pass", confidence: 0.94, reasons: ["Offline intent is explicit."], flags: [] } }).decision, "review");
+
+console.log("ModX GitHub Release and submission review contract tests passed.");

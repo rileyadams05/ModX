@@ -54,6 +54,12 @@ export default {
       } else if (request.method === "POST" && path === "/community/resolve-release") {
         requireBridge(request, env);
         response = await resolveCommunityRelease(request, env);
+      } else if (request.method === "POST" && path === "/community/reviews") {
+        requireBridge(request, env);
+        response = await createCommunitySubmissionReview(request, env);
+      } else if (request.method === "GET" && /^\/community\/reviews\/[a-f0-9-]{20,80}$/.test(path)) {
+        requireBridge(request, env);
+        response = await getCommunitySubmissionReview(request, path.split("/")[3], env);
       } else if (request.method === "GET" && path === "/community/my-tables") {
         requireBridge(request, env);
         response = await listUploaderTablesV3(request, env);
@@ -75,6 +81,9 @@ export default {
       } else if (request.method === "DELETE" && /^\/admin\/games\/[^/]+\/block$/.test(path)) {
         requireAdmin(request, env);
         response = await unblockGame(path.split("/")[3], env);
+      } else if (request.method === "PUT" && /^\/admin\/games\/[^/]+\/eligibility$/.test(path)) {
+        requireAdmin(request, env);
+        response = await updateGameEligibility(request, path.split("/")[3], env);
       } else if (request.method === "POST" && /^\/admin\/abuse\/[a-f0-9]{64}\/block$/.test(path)) {
         requireAdmin(request, env);
         response = await blockUploader(request, path.split("/")[3], env);
@@ -545,6 +554,108 @@ async function uploadTable(request, env) {
   return uploadTableForm(form, env, "published");
 }
 
+async function createCommunitySubmissionReview(request, env) {
+  const body = await readJson(request);
+  const uploaderAbuseKey = cleanAbuseKey(body.uploaderAbuseKey);
+  if (!uploaderAbuseKey) throw new HttpError(400, "Uploader abuse protection is missing.");
+  await assertUploaderMayPublish(uploaderAbuseKey, env);
+  const recent = await env.MODX_DB.prepare(
+    "SELECT COUNT(*) AS count FROM submission_reviews WHERE uploader_abuse_key=?1 AND created_at > datetime('now', '-1 hour')",
+  ).bind(uploaderAbuseKey).first();
+  if (Number(recent?.count || 0) >= 8) throw new HttpError(429, "Too many verification requests. Try again later.");
+
+  const executableName = safeExecutableIdentifier(body.gameExecutable);
+  const fingerprint = String(body.gameFingerprint || "").toLowerCase();
+  if (!executableName || !/^[a-f0-9]{64}$/.test(fingerprint)) throw new HttpError(400, "Game executable metadata is invalid.");
+  const title = titleFromExecutable(executableName);
+  if (!title) throw new HttpError(400, "The game name could not be derived from the executable.");
+  const source = parseGitHubSource(body.source);
+  const verifiedRelease = await verifyGitHubRelease(source, env, body.releaseAssetId, true);
+  const maintenanceMode = parseCommunityMaintenanceMode(body.maintenanceMode);
+  const gameId = await ensureCommunityGame(env, title, executableName);
+  const reviewId = await enqueueSubmissionReview(env, {
+    reviewType: "initial", uploaderAbuseKey, gameId, executableName, fingerprint,
+    gameExecutableSize: Number(body.gameExecutableSize) || null, maintenanceMode, source, verifiedRelease,
+  });
+  return json({ review: await readSubmissionReview(env, reviewId) }, 202);
+}
+
+async function getCommunitySubmissionReview(request, reviewId, env) {
+  const uploaderAbuseKey = cleanAbuseKey(request.headers.get("X-ModX-Uploader-Key"));
+  if (!uploaderAbuseKey) throw new HttpError(401, "Uploader identity is missing");
+  const review = await env.MODX_DB.prepare(
+    "SELECT * FROM submission_reviews WHERE id=?1 AND uploader_abuse_key=?2",
+  ).bind(reviewId, uploaderAbuseKey).first();
+  if (!review) throw new HttpError(404, "Submission review not found");
+  return json({ review: publicReviewRecord(review) });
+}
+
+async function enqueueSubmissionReview(env, input) {
+  const reviewId = crypto.randomUUID();
+  await env.MODX_DB.prepare(`INSERT INTO submission_reviews
+    (id, listing_id, listing_draft_id, review_type, uploader_abuse_key, game_id, game_executable,
+     game_fingerprint, game_executable_size, maintenance_mode, repository_owner, repository_name,
+     repository_url, release_url, release_id, release_tag, release_commit_sha, release_published_at,
+     asset_id, asset_name, asset_url, asset_size)
+    VALUES (?1, ?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+            ?18, ?19, ?20, ?21)`)
+    .bind(reviewId, input.listingId || null, input.reviewType, input.uploaderAbuseKey, input.gameId,
+      input.executableName, input.fingerprint, input.gameExecutableSize, input.maintenanceMode,
+      input.source.owner, input.source.repository, input.source.repositoryUrl, input.verifiedRelease.releaseUrl,
+      input.verifiedRelease.releaseId, input.verifiedRelease.tag, input.verifiedRelease.commitSha,
+      input.verifiedRelease.publishedAt, input.verifiedRelease.asset.id, input.verifiedRelease.asset.name,
+      input.verifiedRelease.asset.downloadUrl, input.verifiedRelease.asset.size).run();
+  await env.SUBMISSION_REVIEW_QUEUE.send({ reviewId });
+  return reviewId;
+}
+
+async function readSubmissionReview(env, reviewId) {
+  const review = await env.MODX_DB.prepare("SELECT * FROM submission_reviews WHERE id=?1").bind(reviewId).first();
+  if (!review) throw new HttpError(404, "Submission review not found");
+  return publicReviewRecord(review);
+}
+
+function publicReviewRecord(review) {
+  return { id: review.id, status: review.status, stage: review.stage, decision: review.decision || null,
+    confidence: review.confidence == null ? null : Number(review.confidence),
+    reasons: parseStoredArray(review.reasons_json), flags: parseStoredArray(review.flags_json),
+    checks: parseStoredArray(review.checks_json), releaseId: review.release_id, releaseTag: review.release_tag,
+    assetId: review.asset_id, assetName: review.asset_name, assetSha256: review.asset_sha256 || null,
+    createdAt: review.created_at, completedAt: review.completed_at || null };
+}
+
+function parseStoredArray(value) {
+  try { const parsed = JSON.parse(value || "[]"); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+}
+
+function parseCommunityMaintenanceMode(value) {
+  const mode = value === "community" ? "community" : value === "author" ? "author" : null;
+  if (!mode) throw new HttpError(400, "Choose a valid maintenance mode.");
+  return mode;
+}
+
+async function assertUploaderMayPublish(uploaderAbuseKey, env) {
+  const blockedUploader = await env.MODX_DB.prepare(
+    "SELECT 1 AS blocked FROM abuse_blocks WHERE uploader_abuse_key = ?1",
+  ).bind(uploaderAbuseKey).first();
+  if (blockedUploader) throw new HttpError(403, "This account cannot publish community tables.");
+}
+
+async function requireApprovedSubmissionReview(env, reviewId, expected) {
+  if (!/^[a-f0-9-]{20,80}$/i.test(String(reviewId || ""))) throw new HttpError(400, "Complete Mod X Submission Verification before publishing.");
+  const review = await env.MODX_DB.prepare("SELECT * FROM submission_reviews WHERE id=?1").bind(reviewId).first();
+  if (!review || review.status !== "completed" || review.decision !== "pass" || review.consumed_at
+      || review.review_type !== "initial" || review.uploader_abuse_key !== expected.uploaderAbuseKey
+      || review.game_id !== expected.gameId || review.game_executable !== expected.executableName
+      || review.game_fingerprint !== expected.fingerprint || review.maintenance_mode !== expected.maintenanceMode
+      || review.repository_owner !== expected.source.owner || review.repository_name !== expected.source.repository
+      || review.release_id !== expected.verifiedRelease.releaseId || review.release_tag !== expected.verifiedRelease.tag
+      || review.asset_id !== expected.verifiedRelease.asset.id || !/^[a-f0-9]{64}$/.test(String(review.asset_sha256 || ""))) {
+    throw new HttpError(409, "This submission does not have a current PASS verification for the selected game and Release.");
+  }
+  return review;
+}
+
 async function submitCommunityTable(request, env) {
   if (!String(request.headers.get("content-type") || "").toLowerCase().startsWith("application/json")) {
     throw new HttpError(415, "Community submissions must use JSON; file uploads are not accepted.");
@@ -555,10 +666,7 @@ async function submitCommunityTable(request, env) {
   }
   const uploaderAbuseKey = cleanAbuseKey(body.uploaderAbuseKey);
   if (!uploaderAbuseKey) throw new HttpError(400, "Uploader abuse protection is missing.");
-  const blockedUploader = await env.MODX_DB.prepare(
-    "SELECT 1 AS blocked FROM abuse_blocks WHERE uploader_abuse_key = ?1",
-  ).bind(uploaderAbuseKey).first();
-  if (blockedUploader) throw new HttpError(403, "This account cannot publish community tables.");
+  await assertUploaderMayPublish(uploaderAbuseKey, env);
   const executableName = safeExecutableIdentifier(body.gameExecutable);
   const fingerprint = String(body.gameFingerprint || "").toLowerCase();
   if (!executableName || !/^[a-f0-9]{64}$/.test(fingerprint)) throw new HttpError(400, "Game executable metadata is invalid.");
@@ -566,10 +674,12 @@ async function submitCommunityTable(request, env) {
   if (!title) throw new HttpError(400, "The game name could not be derived from the executable.");
   const source = parseGitHubSource(body.source);
   const verifiedRelease = await verifyGitHubRelease(source, env, body.releaseAssetId, true);
-  const maintenanceMode = body.maintenanceMode === "community" ? "community" : body.maintenanceMode === "author" ? "author" : null;
-  if (!maintenanceMode) throw new HttpError(400, "Choose a valid maintenance mode.");
+  const maintenanceMode = parseCommunityMaintenanceMode(body.maintenanceMode);
   const authorName = cleanText(body.author?.name || body.originalAuthorName, 100) || "Community";
   const gameId = await ensureCommunityGame(env, title, executableName);
+  const approvedReview = await requireApprovedSubmissionReview(env, body.reviewId, {
+    uploaderAbuseKey, gameId, executableName, fingerprint, maintenanceMode, source, verifiedRelease,
+  });
   const releaseId = crypto.randomUUID();
   await env.MODX_DB.batch([
     env.MODX_DB.prepare(
@@ -583,23 +693,27 @@ async function submitCommunityTable(request, env) {
         release_url, release_tag, github_release_id, release_commit_sha, release_published_at,
         release_checked_at, release_asset_id, release_asset_name, release_asset_url, release_asset_digest)
        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'published', ?9, ?10, NULL, NULL, ?11,
-               1, ?12, 'passed', '{"catalogueOnly":true,"source":"github-release"}', ?13, ?14, ?15,
+               1, ?12, 'passed', ?26, ?13, ?14, ?15,
                ?16, ?17, NULL, ?16, 'available', ?18, ?8, ?8, ?12,
                ?16, ?3, ?19, ?20, ?21, ?22, ?23, ?5, ?24, ?25)`,
     ).bind(releaseId, gameId, verifiedRelease.tag, `github-release:${verifiedRelease.releaseUrl}`,
-      verifiedRelease.asset.name, verifiedRelease.assetDigest || fingerprint, verifiedRelease.asset.size,
+      verifiedRelease.asset.name, approvedReview.asset_sha256, verifiedRelease.asset.size,
       authorName, source.owner, source.repository, verifiedRelease.asset.downloadUrl, uploaderAbuseKey,
       fingerprint, Number(body.gameExecutableSize) || null,
       maintenanceMode === "community" ? "community" : "uploader", verifiedRelease.releaseUrl,
       source.repositoryUrl, maintenanceMode,
       verifiedRelease.releaseId, verifiedRelease.commitSha, verifiedRelease.publishedAt,
       verifiedRelease.checkedAt, verifiedRelease.asset.id, verifiedRelease.asset.downloadUrl,
-      verifiedRelease.assetDigest),
+      approvedReview.asset_sha256, JSON.stringify({ catalogueOnly: true, source: "github-release",
+        reviewId: approvedReview.id, decision: "pass", confidence: approvedReview.confidence, versionSpecific: true })),
     env.MODX_DB.prepare(
       `INSERT INTO table_release_platform_executables
        (table_release_id, platform_id, executable_name, normalized_executable)
        VALUES (?1, 'windows', ?2, ?3)`,
     ).bind(releaseId, executableName, normalizeExecutable(executableName)),
+    env.MODX_DB.prepare(
+      "UPDATE submission_reviews SET listing_id=?1, consumed_at=CURRENT_TIMESTAMP WHERE id=?2 AND consumed_at IS NULL",
+    ).bind(releaseId, approvedReview.id),
   ]);
   return json({ id: releaseId, gameId, gameExecutable: executableName, gameFingerprint: fingerprint,
     author: { name: authorName }, originalAuthor: { name: authorName },
@@ -647,8 +761,14 @@ async function resolveCommunityRelease(request, env) {
 
 async function refreshLatestRelease(id, env) {
   const current = await env.MODX_DB.prepare(
-    `SELECT id, github_owner AS owner, github_repo AS repository, release_tag AS releaseTag,
-            release_asset_name AS assetName
+    `SELECT id, game_id AS gameId, github_owner AS owner, github_repo AS repository,
+            repository_url AS repositoryUrl, release_tag AS releaseTag, release_asset_id AS assetId,
+            release_asset_digest AS assetDigest,
+            release_asset_name AS assetName, uploader_abuse_key AS uploaderAbuseKey,
+            game_executable_sha256 AS gameFingerprint, game_executable_file_size AS gameExecutableSize,
+            maintenance_mode AS maintenanceMode,
+            (SELECT executable_name FROM table_release_platform_executables
+             WHERE table_release_id=table_releases.id AND platform_id='windows' LIMIT 1) AS executableName
      FROM table_releases WHERE id=?1 AND status='published'`,
   ).bind(id).first();
   if (!current) throw new HttpError(404, "Table not found");
@@ -657,19 +777,28 @@ async function refreshLatestRelease(id, env) {
     return json({ id, updateAvailable: current.releaseTag !== latest.tag, assetSelectionRequired: true,
       version: latest.tag, release: releaseResponse(latest), ctAssets: latest.ctAssets }, 409);
   }
-  await env.MODX_DB.prepare(`UPDATE table_releases SET version=?1, object_key=?2, original_filename=?3,
-    sha256=?4, file_size=?5, download_url=?6, source_url=?7, source_status='available',
-    release_url=?7, release_tag=?1, github_release_id=?8, release_commit_sha=?9,
-    release_published_at=?10, release_checked_at=?11, release_asset_id=?12,
-    release_asset_name=?3, release_asset_url=?6, release_asset_digest=?13,
-    updated_at=CASE WHEN release_tag<>?1 THEN CURRENT_TIMESTAMP ELSE updated_at END
-    WHERE id=?14`)
-    .bind(latest.tag, `github-release:${latest.releaseUrl}`, latest.asset.name,
-      latest.assetDigest || latest.commitSha.padEnd(64, "0").slice(0, 64), latest.asset.size,
-      latest.asset.downloadUrl, latest.releaseUrl, latest.releaseId, latest.commitSha,
-      latest.publishedAt, latest.checkedAt, latest.asset.id, latest.assetDigest, id).run();
-  return json({ id, updateAvailable: current.releaseTag !== latest.tag,
-    version: latest.tag, release: releaseResponse(latest) });
+  const latestDigest = latest.assetDigest || latest.asset.digest?.replace(/^sha256:/i, "") || null;
+  if (current.releaseTag === latest.tag && current.assetId === latest.asset.id
+      && (!latestDigest || current.assetDigest === latestDigest)) {
+    await env.MODX_DB.prepare("UPDATE table_releases SET release_checked_at=?1 WHERE id=?2").bind(latest.checkedAt, id).run();
+    return json({ id, updateAvailable: false, version: latest.tag, release: releaseResponse(latest) });
+  }
+  const existing = await env.MODX_DB.prepare(`SELECT * FROM submission_reviews
+    WHERE listing_id=?1 AND review_type='release_update' AND release_id=?2 AND asset_id=?3
+    ORDER BY created_at DESC LIMIT 1`).bind(id, latest.releaseId, latest.asset.id).first();
+  if (existing) return json({ id, updateAvailable: true, verificationRequired: true,
+    review: publicReviewRecord(existing), version: latest.tag, release: releaseResponse(latest) }, 202);
+  const source = { provider: "github", owner: current.owner, repository: current.repository,
+    repositoryUrl: current.repositoryUrl || `https://github.com/${current.owner}/${current.repository}`,
+    releaseUrl: latest.releaseUrl, tag: latest.tag };
+  const reviewId = await enqueueSubmissionReview(env, {
+    listingId: id, reviewType: "release_update", uploaderAbuseKey: current.uploaderAbuseKey || `system:${id}`,
+    gameId: current.gameId, executableName: current.executableName, fingerprint: current.gameFingerprint,
+    gameExecutableSize: current.gameExecutableSize, maintenanceMode: current.maintenanceMode,
+    source, verifiedRelease: latest,
+  });
+  return json({ id, updateAvailable: true, verificationRequired: true,
+    review: await readSubmissionReview(env, reviewId), version: latest.tag, release: releaseResponse(latest) }, 202);
 }
 
 function releaseResponse(verified) {
@@ -1126,6 +1255,23 @@ async function unblockGame(gameId, env) {
   const result = await env.MODX_DB.prepare("DELETE FROM blocked_games WHERE game_id = ?1").bind(gameId).run();
   if (!result.meta.changes) throw new HttpError(404, "Blocked game not found");
   return json({ gameId, blocked: false });
+}
+
+async function updateGameEligibility(request, gameId, env) {
+  const body = await readJson(request);
+  const allowed = new Set(["eligible", "online_only", "server_sided", "unsuitable", "review"]);
+  const status = String(body.status || "").trim().toLowerCase();
+  if (!allowed.has(status)) throw new HttpError(400, "Choose a valid game eligibility state.");
+  const game = await env.MODX_DB.prepare("SELECT id FROM games WHERE id=?1").bind(gameId).first();
+  if (!game) throw new HttpError(404, "Game not found");
+  const reason = cleanText(body.reason, 500) || null;
+  const reviewedBy = cleanText(body.reviewedBy, 100) || "admin";
+  await env.MODX_DB.prepare(`INSERT INTO game_eligibility (game_id, status, reason, reviewed_by)
+    VALUES (?1, ?2, ?3, ?4)
+    ON CONFLICT(game_id) DO UPDATE SET status=excluded.status, reason=excluded.reason,
+      reviewed_by=excluded.reviewed_by, updated_at=CURRENT_TIMESTAMP`)
+    .bind(gameId, status, reason, reviewedBy).run();
+  return json({ gameId, status, reason });
 }
 
 async function blockUploader(request, uploaderAbuseKey, env) {

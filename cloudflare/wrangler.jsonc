@@ -13,7 +13,8 @@
     }
   ],
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "head_sampling_rate": 1
   },
   "triggers": {
     "crons": ["0 * * * *"]
@@ -30,5 +31,13 @@
       "database_id": "e4b05c96-930a-4012-8980-cfcd697d0c19",
       "migrations_dir": "migrations"
     }
-  ]
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "SUBMISSION_REVIEW_QUEUE",
+        "queue": "modx-submission-reviews"
+      }
+    ]
+  }
 }
