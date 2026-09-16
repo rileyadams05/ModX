@@ -47,7 +47,6 @@ export default {
         requireAdmin(request, env);
         response = await createGame(request, env);
       } else if (request.method === "POST" && path === "/admin/tables") {
-        requireAdmin(request, env);
         response = json({ error: "Direct .CT uploads are no longer supported." }, 410);
       } else if (request.method === "POST" && path === "/community/submit") {
         requireBridge(request, env);
