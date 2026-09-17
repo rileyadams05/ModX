@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import worker, { parseGitHubSource, selectCtAsset, verifyGitHubRelease } from "./src/index.js";
-import { parseCheatTable, classifyDeterministicIntent, combineDecision } from "./src/review-worker.js";
+import worker, { parseGitHubSource, selectTrainerAsset, verifyGitHubRelease } from "./src/index.js";
+import { parseTrainerPackage, classifyDeterministicIntent, combineDecision } from "./src/review-worker.js";
 
 assert.equal(typeof worker.scheduled, "function", "automatic release refresh scheduler is missing");
 const wranglerConfig = JSON.parse((await readFile(new URL("./wrangler.jsonc", import.meta.url), "utf8"))
@@ -44,14 +44,14 @@ for (const rejected of [
 }
 
 const assets = [
-  { id: "1", name: "One.ct" },
-  { id: "2", name: "Two.CT" },
+  { id: "1", name: "One.modxtrainer" },
+  { id: "2", name: "Two.modxtrainer" },
 ];
-assert.deepEqual(selectCtAsset([assets[0]], "", ""), assets[0]);
-assert.deepEqual(selectCtAsset(assets, "2", ""), assets[1]);
-assert.deepEqual(selectCtAsset(assets, "", "one.ct"), assets[0]);
-assert.equal(selectCtAsset(assets, "", ""), null);
-assert.equal(selectCtAsset(assets, "missing", ""), null);
+assert.deepEqual(selectTrainerAsset([assets[0]], "", ""), assets[0]);
+assert.deepEqual(selectTrainerAsset(assets, "2", ""), assets[1]);
+assert.deepEqual(selectTrainerAsset(assets, "", "one.modxtrainer"), assets[0]);
+assert.equal(selectTrainerAsset(assets, "", ""), null);
+assert.equal(selectTrainerAsset(assets, "missing", ""), null);
 
 const originalFetch = globalThis.fetch;
 const requestedUrls = [];
@@ -68,9 +68,9 @@ globalThis.fetch = async (url) => {
       published_at: "2026-09-16T00:00:00Z",
       assets: [{
         id: 456,
-        name: "GameTable.ct",
+        name: "GameTable.modxtrainer",
         state: "uploaded",
-        browser_download_url: "https://github.com/Example-Owner/game-table/releases/download/v1.2.0/GameTable.ct",
+        browser_download_url: "https://github.com/Example-Owner/game-table/releases/download/v1.2.0/GameTable.modxtrainer",
         size: 2048,
         digest: "sha256:" + "a".repeat(64),
       }],
@@ -84,7 +84,7 @@ globalThis.fetch = async (url) => {
 try {
   const verified = await verifyGitHubRelease(release, {}, null, true);
   assert.equal(verified.tag, "v1.2.0");
-  assert.equal(verified.asset.name, "GameTable.ct");
+  assert.equal(verified.asset.name, "GameTable.modxtrainer");
   assert.equal(verified.assetDigest, "a".repeat(64));
   assert.equal(requestedUrls.length, 3);
   assert.equal(requestedUrls.every((url) => url.startsWith("https://api.github.com/repos/")), true);
@@ -97,16 +97,25 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-const safeCt = new TextEncoder().encode(`<?xml version="1.0"?><CheatTable CheatEngineTableVersion="45">
-  <CheatEntries><CheatEntry><ID>1</ID><Description>Infinite health (offline only)</Description>
-  <VariableType>Auto Assembler Script</VariableType><AssemblerScript>[ENABLE]\naobscanmodule(health,Game.exe,90 90)\n[DISABLE]</AssemblerScript>
-  </CheatEntry></CheatEntries><ProcessName>Game.exe</ProcessName><Comments>Do not use this table online.</Comments></CheatTable>`);
-const parsedCt = parseCheatTable(safeCt, "Game.exe");
-assert.equal(parsedCt.entryCount, 1);
-assert.deepEqual(parsedCt.processNames, ["Game.exe"]);
-assert.equal(parsedCt.processMismatch, false);
-assert.equal(parsedCt.containsAutoAssembler, true);
-assert.throws(() => parseCheatTable(new TextEncoder().encode("<!DOCTYPE x><CheatTable><CheatEntries></CheatEntries></CheatTable>")), /External XML/);
+const safePackage = new TextEncoder().encode(JSON.stringify({
+  schemaVersion: 1, format: "modx.trainer-package",
+  build: { id: "game-1", createdAtUnix: 1, generator: "Mod X DEV Mode" },
+  project: { id: "game", name: "Game offline trainer", gameId: "game" },
+  runtime: {
+    features: [{ id: "health", name: "Infinite health", description: "Offline only" }],
+    bindings: [{ featureId: "health", entryId: 1 }], groups: [],
+    layout: { overlayWidth: 420, overlayOpacity: 0.92, pages: [] },
+    hotkeys: { schemaVersion: 1, features: {} },
+    voiceCommands: { schemaVersion: 1, features: {} },
+  },
+}));
+const parsedPackage = parseTrainerPackage(safePackage);
+assert.equal(parsedPackage.featureCount, 1);
+assert.match(parsedPackage.featureText, /Infinite health/);
+assert.throws(() => parseTrainerPackage(new TextEncoder().encode("<CheatTable/>")), /not a valid finished Mod X trainer/);
+assert.throws(() => parseTrainerPackage(new TextEncoder().encode(JSON.stringify({
+  schemaVersion: 1, format: "modx.trainer-package", sourceCt: "source/original.ct", runtime: { features: [{}] },
+}))), /must not contain editable CT source/);
 assert.equal(classifyDeterministicIntent("Do not use this trainer online. Offline only.").decision, "review");
 assert.equal(classifyDeterministicIntent("Competitive ranked multiplayer aimbot cheat for public lobbies").decision, "reject");
 assert.equal(combineDecision({ gameEligible: true, forcedDecision: null,

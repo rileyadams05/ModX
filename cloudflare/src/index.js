@@ -756,7 +756,7 @@ async function resolveCommunityRelease(request, env) {
   const source = parseGitHubSource(body?.source);
   const verified = await verifyGitHubRelease(source, env, body?.releaseAssetId, false);
   return json({ source, version: verified.tag, release: releaseResponse(verified),
-    ctAssets: verified.ctAssets, assetSelectionRequired: !verified.asset });
+    trainerAssets: verified.trainerAssets, assetSelectionRequired: !verified.asset });
 }
 
 async function refreshLatestRelease(id, env) {
@@ -775,7 +775,7 @@ async function refreshLatestRelease(id, env) {
   const latest = await verifyLatestGitHubRelease(current.owner, current.repository, current.assetName, env);
   if (!latest.asset) {
     return json({ id, updateAvailable: current.releaseTag !== latest.tag, assetSelectionRequired: true,
-      version: latest.tag, release: releaseResponse(latest), ctAssets: latest.ctAssets }, 409);
+      version: latest.tag, release: releaseResponse(latest), trainerAssets: latest.trainerAssets }, 409);
   }
   const latestDigest = latest.assetDigest || latest.asset.digest?.replace(/^sha256:/i, "") || null;
   if (current.releaseTag === latest.tag && current.assetId === latest.asset.id
@@ -838,15 +838,15 @@ async function normalizeVerifiedRelease(source, release, requestedAssetId, prefe
   if (!release || release.draft || !release.published_at || cleanText(release.tag_name, 200) !== source.tag) {
     throw new HttpError(400, "The URL must point to a published GitHub Release.");
   }
-  const ctAssets = (Array.isArray(release.assets) ? release.assets : [])
-    .filter((asset) => asset?.state === "uploaded" && String(asset.name || "").toLowerCase().endsWith(".ct"))
+  const trainerAssets = (Array.isArray(release.assets) ? release.assets : [])
+    .filter((asset) => asset?.state === "uploaded" && String(asset.name || "").toLowerCase().endsWith(".modxtrainer"))
     .map((asset) => ({ id: String(asset.id), name: cleanText(asset.name, 180),
       downloadUrl: String(asset.browser_download_url || ""), size: Number(asset.size) || 0,
       digest: cleanText(asset.digest, 160) || null }));
-  const asset = selectCtAsset(ctAssets, requestedAssetId, preferredAssetName);
-  if (requestedAssetId && !asset) throw new HttpError(400, "Select a valid .CT asset from this GitHub Release.");
-  if (!ctAssets.length) throw new HttpError(400, "The GitHub Release must contain a .CT asset.");
-  if (requireAsset && !asset) throw new HttpError(400, "This release contains multiple .CT assets. Select the intended table asset.");
+  const asset = selectTrainerAsset(trainerAssets, requestedAssetId, preferredAssetName);
+  if (requestedAssetId && !asset) throw new HttpError(400, "Select a valid .modxtrainer asset from this GitHub Release.");
+  if (!trainerAssets.length) throw new HttpError(400, "The GitHub Release must contain a finished .modxtrainer build.");
+  if (requireAsset && !asset) throw new HttpError(400, "This release contains multiple .modxtrainer assets. Select the intended finished trainer.");
   const commit = await githubApiJson(
     `https://api.github.com/repos/${encodeURIComponent(source.owner)}/${encodeURIComponent(source.repository)}/commits/${encodeURIComponent(source.tag)}`, env,
   );
@@ -855,17 +855,17 @@ async function normalizeVerifiedRelease(source, release, requestedAssetId, prefe
   const releaseUrl = `${source.repositoryUrl}/releases/tag/${source.tag.split("/").map(encodeURIComponent).join("/")}`;
   return { releaseUrl, repositoryUrl: source.repositoryUrl, tag: source.tag,
     releaseId: String(release.id), commitSha,
-    publishedAt: release.published_at, checkedAt: new Date().toISOString(), ctAssets, asset,
+    publishedAt: release.published_at, checkedAt: new Date().toISOString(), trainerAssets, asset,
     assetDigest: asset?.digest?.replace(/^sha256:/i, "") || null };
 }
 
-function selectCtAsset(ctAssets, requestedAssetId, preferredAssetName) {
-  let asset = requestedAssetId ? ctAssets.find((item) => item.id === String(requestedAssetId)) : null;
+function selectTrainerAsset(trainerAssets, requestedAssetId, preferredAssetName) {
+  let asset = requestedAssetId ? trainerAssets.find((item) => item.id === String(requestedAssetId)) : null;
   if (!asset && preferredAssetName) {
     const normalizedPreferredName = String(preferredAssetName).toLowerCase();
-    asset = ctAssets.find((item) => item.name.toLowerCase() === normalizedPreferredName) || null;
+    asset = trainerAssets.find((item) => item.name.toLowerCase() === normalizedPreferredName) || null;
   }
-  if (!asset && ctAssets.length === 1) asset = ctAssets[0];
+  if (!asset && trainerAssets.length === 1) asset = trainerAssets[0];
   return asset || null;
 }
 
@@ -1582,4 +1582,4 @@ class HttpError extends Error {
   }
 }
 
-export { parseGitHubSource, selectCtAsset, verifyGitHubRelease };
+export { parseGitHubSource, selectTrainerAsset, verifyGitHubRelease };
